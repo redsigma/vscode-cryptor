@@ -8,6 +8,13 @@ const gpgArgumentHovers = {
     'cryptor.gpg.signcmd': { recipientID },
     'cryptor.gpg.encryptselectioncmd': { recipientID, encryptcmd },
     'cryptor.gpg.encryptfilecmd': { recipientID, encryptcmd },
+    'cryptor.gpg.encryptbinaryfilecmd': { recipientID, encryptcmd },
+    'cryptor.gpg.symmetricencryptcmd': {
+        source: 'Path to the selected file. For text selections, this is `-`, so GPG reads the text after the passphrase from standard input.',
+    },
+    'cryptor.gpg.symmetricencryptbinaryfilecmd': {
+        source: 'Path to the selected file.',
+    },
     'cryptor.gpg.decryptselectioncmd': { decryptcmd },
     'cryptor.gpg.signselectioncmd': {
         recipientID,

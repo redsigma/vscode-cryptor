@@ -53,6 +53,11 @@
                 "category": "GPG"
             },
             {
+                "command": "extension.cryptor.gpg.encryptBinaryFile",
+                "title": "GPG: Encrypt binary file",
+                "category": "GPG"
+            },
+            {
                 "command": "extension.cryptor.gpg.decryptFile",
                 "title": "GPG: Decrypt file",
                 "category": "GPG"
@@ -88,6 +93,10 @@
                 },
                 {
                     "when": "false",
+                    "command": "extension.cryptor.gpg.encryptBinaryFile"
+                },
+                {
+                    "when": "false",
                     "command": "extension.cryptor.gpg.decryptFile"
                 },
                 {
@@ -115,6 +124,11 @@
                 {
                     "when": "sideBarFocus && activeViewlet == 'workbench.view.explorer'",
                     "command": "extension.cryptor.gpg.encryptArmoredFile",
+                    "group": "cryptor@7"
+                },
+                {
+                    "when": "sideBarFocus && activeViewlet == 'workbench.view.explorer' && !explorerResourceIsFolder",
+                    "command": "extension.cryptor.gpg.encryptBinaryFile",
                     "group": "cryptor@7"
                 },
                 {
@@ -176,6 +190,11 @@
                         "default": "asc",
                         "description": "Suffix for encrypted armored files."
                     },
+                    "cryptor.gpg.encryptedBinaryFileSuffix": {
+                        "type": "string",
+                        "default": "gpg",
+                        "description": "Suffix for encrypted binary files."
+                    },
                     "cryptor.gpg.env": {
                         "type": "object",
                         "additionalProperties": { "type": "string" },
@@ -192,14 +211,32 @@
                     "cryptor.gpg.encryptselectioncmd": {
                         "type": "string",
                         "scope": "machine",
-                        "default": "--batch ${encryptcmd} --encrypt",
+                        "default": "--batch --no-symkey-cache ${encryptcmd} --encrypt",
                         "description": "GPG arguments for encrypting selected text."
                     },
                     "cryptor.gpg.encryptfilecmd": {
                         "type": "string",
                         "scope": "machine",
-                        "default": "--batch --encrypt ${encryptcmd}",
-                        "description": "GPG arguments for file encryption."
+                        "default": "--batch --no-symkey-cache --encrypt ${encryptcmd}",
+                        "description": "GPG arguments for armored file encryption with a recipient."
+                    },
+                    "cryptor.gpg.encryptbinaryfilecmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch --no-symkey-cache --encrypt ${encryptcmd} --no-armor",
+                        "description": "GPG arguments for binary file encryption with a recipient."
+                    },
+                    "cryptor.gpg.symmetricencryptcmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --armor --output - --symmetric -- ${source}",
+                        "description": "GPG arguments for encrypting armored files or selections with a passphrase."
+                    },
+                    "cryptor.gpg.symmetricencryptbinaryfilecmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-armor --output - --symmetric -- ${source}",
+                        "description": "GPG arguments for binary file encryption with a passphrase."
                     },
                     "cryptor.gpg.decryptcmd": {
                         "type": "string",
@@ -210,13 +247,13 @@
                     "cryptor.gpg.decryptselectioncmd": {
                         "type": "string",
                         "scope": "machine",
-                        "default": "--batch ${decryptcmd}",
+                        "default": "--batch --no-symkey-cache ${decryptcmd}",
                         "description": "GPG arguments for decrypting selected text."
                     },
                     "cryptor.gpg.decryptfilecmd": {
                         "type": "string",
                         "scope": "machine",
-                        "default": "--batch --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
+                        "default": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
                         "description": "GPG arguments for file decryption."
                     },
                     "cryptor.gpg.signcmd": {

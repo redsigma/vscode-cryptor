@@ -16,6 +16,7 @@ Use GnuPG and SOPS to encrypt and decrypt files in VS Code. GnuPG also supports 
 
 - To encrypt text, select it and open the Command Palette (`Cmd+Shift+P` on macOS or `Ctrl+Shift+P` on Windows and Linux). Choose `GPG: Encrypt Selection` and follow the prompts.
 - To decrypt text, select it and choose `GPG: Decrypt Selection` from the Command Palette.
+- To encrypt a file, right-click it in Explorer and choose **GPG: Encrypt binary file** for binary OpenPGP or **GPG: Encrypt armored file** for ASCII-armored output. Both offer recipient keys and passphrases. The default suffixes are `.gpg` and `.asc`, respectively.
 
 ### Using stored passphrase in settings
 - Edit your local `settings.json` and add the following:
@@ -30,7 +31,7 @@ Use GnuPG and SOPS to encrypt and decrypt files in VS Code. GnuPG also supports 
       ]
   }
   ```
-- The stored passphrase will be listed to chose to use for decryption.
+- Stored passphrases appear in the file decryption prompt and the encryption picker. Choose a passphrase to encrypt symmetrically, or choose **Enter passphrase manually…** to type one. Public GPG keys in the picker encrypt for a recipient.
 
 > If no stored passphrase is chosen then the regular prompt will appear.
 
@@ -41,11 +42,14 @@ Override these defaults in VS Code user settings. Leaving the settings unset use
 ```json
 {
     "cryptor.gpg.encryptcmd": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
-    "cryptor.gpg.encryptselectioncmd": "--batch ${encryptcmd} --encrypt",
-    "cryptor.gpg.encryptfilecmd": "--batch --encrypt ${encryptcmd}",
+    "cryptor.gpg.encryptselectioncmd": "--batch --no-symkey-cache ${encryptcmd} --encrypt",
+    "cryptor.gpg.encryptfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd}",
+    "cryptor.gpg.encryptbinaryfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd} --no-armor",
+    "cryptor.gpg.symmetricencryptcmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --armor --output - --symmetric -- ${source}",
+    "cryptor.gpg.symmetricencryptbinaryfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-armor --output - --symmetric -- ${source}",
     "cryptor.gpg.decryptcmd": "--decrypt",
-    "cryptor.gpg.decryptselectioncmd": "--batch ${decryptcmd}",
-    "cryptor.gpg.decryptfilecmd": "--batch --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
+    "cryptor.gpg.decryptselectioncmd": "--batch --no-symkey-cache ${decryptcmd}",
+    "cryptor.gpg.decryptfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
     "cryptor.gpg.signcmd": "--default-key ${recipientID} --trust-model always",
     "cryptor.gpg.signselectioncmd": "--batch ${signcmd} --clearsign",
     "cryptor.gpg.verifycmd": "--batch --trust-model always --status-fd 1 --verify",
@@ -54,8 +58,10 @@ Override these defaults in VS Code user settings. Leaving the settings unset use
 ```
 
 - Hover over a placeholder in `settings.json` to see what it expands to. Use `${encryptcmd}`, `${decryptcmd}`, and `${signcmd}` as separate arguments in the templates that include them.
+- The default encryption and decryption templates include `--no-symkey-cache`. It controls GnuPG's symmetric passphrase cache on GnuPG 2.2.7 and later. Include it in custom templates to get the same behavior.
 - If you previously customized `listkeyscmd` or `decryptfilecmd`, include `--batch` in that setting to retain batch mode.
-- `encryptfilecmd` reads the source file from standard input and writes encrypted data to standard output. In `decryptfilecmd`, keep `${source}` and `--output ${destination}` so Cryptor can write the decrypted file to its destination after GPG succeeds.
+- `encryptfilecmd` and `encryptbinaryfilecmd` read the source file from standard input and write encrypted data to standard output. In `decryptfilecmd`, keep `${source}` and `--output ${destination}` so Cryptor can write the decrypted file to its destination after GPG succeeds.
+- `symmetricencryptcmd` and `symmetricencryptbinaryfilecmd` read the passphrase from the first line of standard input and write the encrypted result to standard output. `${source}` is the selected file path, or `-` when the plaintext follows the passphrase on standard input for a text selection.
 - Keep `--list-keys` and `--with-colons` in `listkeyscmd` for the key picker.
 - Keep `--verify` and `--status-fd 1` in `verifycmd` so Cryptor can read GPG's signature status.
 - Use single or double quotes around literal arguments containing spaces. Substituted keys and paths already stay together as single arguments. Cryptor passes the arguments directly to GPG and sends file decryption passphrases through standard input.

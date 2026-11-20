@@ -3,6 +3,8 @@ const { constants, promises: fs } = require('fs');
 const path = require('path');
 const { getCommandArguments } = require('./gpgArguments.js');
 
+const symmetricCacheOption = '--no-symkey-cache';
+
 /**
  * Returns a list of public keys available for encryption
  *
@@ -141,23 +143,78 @@ async function decrypt(text, env) {
  * @param {string} dest
  * @param {string} recipientID
  * @param {NodeJS.ProcessEnv} [env]
+ * @param {boolean} [overwrite]
+ * @param {'armored' | 'binary'} [format]
  * @returns {Promise<String>} returns a promise with encrypted file path
  */
-async function encryptFile(source, dest, recipientID, env) {
-    const args = getCommandArguments('encryptfilecmd', {
+async function encryptFile(source, dest, recipientID, env, overwrite = true, format = 'armored') {
+    const command = format === 'binary' ? 'encryptbinaryfilecmd' : 'encryptfilecmd';
+    const args = getCommandArguments(command, {
         recipientID,
         encryptcmd: () => getCommandArguments('encryptcmd', { recipientID }),
     });
 
-    return writeGpgOutput(dest, true, async temporaryOutput => {
-        let input;
-        let output;
+    return writeEncryptedFile(dest, overwrite, async output => {
+        const input = await fs.open(source, 'r');
         try {
-            input = await fs.open(source, 'r');
-            output = await fs.open(temporaryOutput, 'wx', 0o600);
-            await runGpg(args, input.fd, env, output.fd);
+            await runGpg(args, input.fd, env, output);
         } finally {
-            await Promise.all([input && input.close(), output && output.close()]);
+            await input.close();
+        }
+    });
+}
+
+/**
+ * @param {string} text
+ * @param {string} passphrase
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+async function encryptWithPassphrase(text, passphrase, env) {
+    return runSymmetricEncryption('-', passphrase, text, env);
+}
+
+/**
+ * @param {string} source
+ * @param {string} dest
+ * @param {string} passphrase
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {boolean} [overwrite]
+ * @param {'armored' | 'binary'} [format]
+ */
+async function encryptFileWithPassphrase(source, dest, passphrase, env, overwrite = true, format = 'armored') {
+    return writeEncryptedFile(dest, overwrite, output => runSymmetricEncryption(source, passphrase, '', env, output, format));
+}
+
+/**
+ * @param {string} source A file path or '-' to read the plaintext from stdin.
+ * @param {string} passphrase
+ * @param {string} plaintext
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {number} [output]
+ * @param {'armored' | 'binary'} [format]
+ */
+function runSymmetricEncryption(source, passphrase, plaintext, env, output, format = 'armored') {
+    if (!passphrase || /[\r\n\0]/.test(passphrase)) {
+        throw new Error('Provide a non-empty, single-line passphrase for GPG encryption.');
+    }
+    const command = format === 'binary' ? 'symmetricencryptbinaryfilecmd' : 'symmetricencryptcmd';
+    const args = getCommandArguments(command, { source });
+    // GPG reads one passphrase line from stdin before reading any plaintext from it.
+    return runGpg(args, `${passphrase}\n${plaintext}`, env, output);
+}
+
+/**
+ * @param {string} dest
+ * @param {boolean} overwrite
+ * @param {(output: number) => Promise<unknown>} encrypt
+ */
+function writeEncryptedFile(dest, overwrite, encrypt) {
+    return writeGpgOutput(dest, overwrite, async temporaryOutput => {
+        const output = await fs.open(temporaryOutput, 'wx', 0o600);
+        try {
+            await encrypt(output.fd);
+        } finally {
+            await output.close();
         }
 
         if ((await fs.stat(temporaryOutput)).size === 0) {
@@ -198,7 +255,25 @@ async function writeGpgOutput(dest, overwrite, produceOutput) {
  * @param {number | 'pipe'} [output] File descriptor or captured stdout.
  * @returns {Promise<string>}
  */
-function runGpg(args, input, env, output = 'pipe') {
+async function runGpg(args, input, env, output) {
+    if (args.includes(symmetricCacheOption)) {
+        // GnuPG added this option in 2.2.7. Check the executable used by this operation.
+        const options = await spawnGpg(['--no-options', '--dump-options'], '', env);
+        if (!options.split(/\r?\n/).includes(symmetricCacheOption)) {
+            args = args.filter(arg => arg !== symmetricCacheOption);
+        }
+    }
+    return spawnGpg(args, input, env, output);
+}
+
+/**
+ * @param {string[]} args
+ * @param {string | Buffer | number} input
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {number | 'pipe'} [output]
+ * @returns {Promise<string>}
+ */
+function spawnGpg(args, input, env, output = 'pipe') {
     return new Promise((resolve, reject) => {
         const child = spawn('gpg', args, {
             stdio: [typeof input === 'number' ? input : 'pipe', output, 'pipe'],
@@ -306,8 +381,10 @@ async function clearSign(text, recipientID, env) {
 module.exports = {
     listKeys: listKeys,
     encrypt: encrypt,
+    encryptWithPassphrase: encryptWithPassphrase,
     decrypt: decrypt,
     encryptFile: encryptFile,
+    encryptFileWithPassphrase: encryptFileWithPassphrase,
     decryptFile: decryptFile,
     decryptFileToText: decryptFileToText,
     clearSign: clearSign,

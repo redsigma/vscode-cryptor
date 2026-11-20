@@ -20,7 +20,11 @@ function activate(context) {
     const handlers = {
         gpg: {
             editor: { encryptSelection, decryptSelection, clearSignSelection, validateSelectionClearSign },
-            file: { encryptArmoredFile: encryptArmored, decryptFile },
+            file: {
+                encryptArmoredFile: uri => encryptGpgFile(uri, 'armored'),
+                encryptBinaryFile: uri => encryptGpgFile(uri, 'binary'),
+                decryptFile,
+            },
         },
         sops: {
             editor: {},
@@ -142,10 +146,12 @@ async function encryptSelection(textEditor) {
 
     try {
         const env = await getGpgEnvironment(textEditor.document.uri);
-        const selected = await getRecipient(env);
+        const selected = await getEncryptionChoice(env);
         if (!selected) return;
 
-        const encrypted = await gpg.encrypt(text, selected.email, env);
+        const encrypted = 'passphrase' in selected
+            ? await gpg.encryptWithPassphrase(text, selected.passphrase, env)
+            : await gpg.encrypt(text, selected.email, env);
         textEditor.edit(edit => edit.replace(selection, encrypted));
         vscode.window.setStatusBarMessage('GPG Encrypted!', 2000);
     } catch (error) {
@@ -181,27 +187,29 @@ async function decryptSelection(textEditor) {
 }
 
 /**
- * Encrypt armored file command
+ * Encrypt a file using the selected output format.
  *
  * @param {vscode.Uri} uri
+ * @param {'armored' | 'binary'} format
  */
-async function encryptArmored(uri) {
-
-    let inputFilePath = uri.fsPath;
-
-    let suffix = getGpgSetting('encryptedFileSuffix');
-    let destFilePath = `${inputFilePath}.${suffix}`;
+async function encryptGpgFile(uri, format) {
+    const inputFilePath = uri.fsPath;
+    const suffix = getGpgSetting(format === 'binary' ? 'encryptedBinaryFileSuffix' : 'encryptedFileSuffix');
+    const destFilePath = `${inputFilePath}.${suffix}`;
 
     try {
-        if (await checkFile(inputFilePath, destFilePath) === undefined) return;
+        const overwrite = await checkFile(inputFilePath, destFilePath);
+        if (overwrite === undefined) return;
 
         const env = await getGpgEnvironment(uri);
-        const selected = await getRecipient(env);
+        const selected = await getEncryptionChoice(env);
         if (!selected) return;
 
-        const resultFile = await gpg.encryptFile(inputFilePath, destFilePath, selected.email, env);
+        const resultFile = 'passphrase' in selected
+            ? await gpg.encryptFileWithPassphrase(inputFilePath, destFilePath, selected.passphrase, env, overwrite, format)
+            : await gpg.encryptFile(inputFilePath, destFilePath, selected.email, env, overwrite, format);
         if (resultFile && fs.existsSync(resultFile)) {
-            vscode.window.showTextDocument(vscode.Uri.file(resultFile));
+            if (format === 'armored') vscode.window.showTextDocument(vscode.Uri.file(resultFile));
             vscode.window.setStatusBarMessage('GPG Encrypted!', 2000);
         }
     } catch (error) {
@@ -260,28 +268,55 @@ async function checkFile(inputFilePath, destFilePath) {
     return choice === 'Yes' ? true : undefined;
 }
 
-/**
- * Pick a stored passphrase or ask for one in a masked input.
- *
- * @returns {Promise<string | undefined>}
- */
-async function getPassphrase() {
+function getStoredPassphraseItems() {
     const configured = getGpgSetting('passphrases');
     const passphrases = Array.isArray(configured) ? configured : [];
-    const items = passphrases.filter(entry => entry && typeof entry.passphrase === 'string').map(entry => ({
+    return passphrases.filter(entry => entry && typeof entry.passphrase === 'string').map(entry => ({
         label: `<${entry.email}>`,
         description: entry.description ? `(${entry.description})` : '',
         passphrase: entry.passphrase,
     }));
-    const choice = await pickOrEnterCredential(items,
+}
+
+const passphraseInputOptions = {
+    prompt: 'Provide your passphrase',
+    placeHolder: 'My passphrase',
+    validateInput: value => value.length === 0 ? 'Passphrase cannot be empty' : undefined,
+};
+
+/** @returns {Promise<string | undefined>} */
+async function getPassphrase() {
+    const choice = await pickOrEnterCredential(
+        getStoredPassphraseItems(),
         { placeHolder: 'Select stored passphrase' },
-        {
-            prompt: 'Provide your passphrase',
-            placeHolder: 'My passphrase',
-            validateInput: value => value.length === 0 ? 'Passphrase cannot be empty' : undefined,
-        }
+        passphraseInputOptions
     );
     if (choice) return 'item' in choice ? choice.item.passphrase : choice.value;
+}
+
+/** @param {NodeJS.ProcessEnv} [env] */
+async function getEncryptionChoice(env) {
+    const recipients = await getRecipientItems(env);
+    const passphrases = getStoredPassphraseItems().map(item => Object.assign(item, { detail: 'Encrypt with a passphrase' }));
+    const choice = await pickOrEnterCredential(
+        [...recipients, ...passphrases],
+        { placeHolder: 'Select a recipient or passphrase' },
+        passphraseInputOptions,
+        'Enter passphrase manually…'
+    );
+    if (choice) return 'item' in choice ? choice.item : { passphrase: choice.value };
+}
+
+/** @param {NodeJS.ProcessEnv} [env] */
+async function getRecipientItems(env) {
+    const publicKeys = await gpg.listKeys(env);
+    return publicKeys.map(key => ({
+        label: `<${key.email}>`,
+        description: `(${key.key_id})`,
+        detail: key.name,
+        key_id: key.key_id,
+        email: key.email,
+    }));
 }
 
 /**
@@ -290,21 +325,8 @@ async function getPassphrase() {
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<{label: string; description: string; detail: string; key_id: string; email: string;}>}
  */
-function getRecipient(env) {
-    return gpg.listKeys(env).then(
-        publicKeys => publicKeys.map(
-            /** @param {gpg.PublicKey} currentValue */
-            currentValue => ({
-                label: `<${currentValue.email}>`,
-                description: `(${currentValue.key_id})`,
-                detail: currentValue.name,
-                key_id: currentValue.key_id,
-                email: currentValue.email,
-            })
-        )
-    ).then(
-        options => vscode.window.showQuickPick(options, { placeHolder: "Select recipient" })
-    );
+async function getRecipient(env) {
+    return vscode.window.showQuickPick(await getRecipientItems(env), { placeHolder: 'Select recipient' });
 }
 
 /**
