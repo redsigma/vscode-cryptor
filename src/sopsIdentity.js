@@ -3,6 +3,7 @@ const path = require('path');
 const vscode = require('vscode');
 const { createVariableExpander } = require('./toolEnvironment.js');
 const { pickOrEnterCredential } = require('./credentialPrompt.js');
+const { getCryptorSetting } = require('./configuration.js');
 
 const ageSecretPrefix = 'AGE-SECRET-KEY-1';
 const ageSecretPattern = /^AGE-SECRET-KEY-1[A-Z0-9]+$/;
@@ -10,11 +11,14 @@ const regexPrefix = 'regex:';
 
 /** @typedef {{ group: string, directories: string[], filenames: string[], overrides?: { gpgExtensions?: string[] } }} AgeKeyLookup */
 
-/** @returns {Map<string, AgeKeyLookup>} */
-function getIdentityLookupGroups() {
-    const lookups = vscode.workspace.getConfiguration('cryptor.sops').get('ageKeyLookups', []);
+/**
+ * @param {vscode.Uri} uri
+ * @returns {Map<string, AgeKeyLookup>}
+ */
+function getIdentityLookupGroups(uri) {
+    const lookups = getCryptorSetting('sops.ageKeyLookups', uri);
     if (!Array.isArray(lookups)) {
-        throw new Error('cryptor.sops.ageKeyLookups must be a list of lookup groups.');
+        throw new Error('The "sops.ageKeyLookups" field in "cryptor" must be a list of lookup groups.');
     }
 
     const groups = new Map();
@@ -22,7 +26,7 @@ function getIdentityLookupGroups() {
         if (!lookup || typeof lookup.group !== 'string' || !lookup.group.trim()) continue;
         const group = lookup.group.trim();
         if (groups.has(group)) {
-            throw new Error(`Use a unique group name in cryptor.sops.ageKeyLookups. "${group}" is listed twice.`);
+            throw new Error(`Use a unique group name in cryptor["sops.ageKeyLookups"]. "${group}" is listed twice.`);
         }
         groups.set(group, lookup);
     }
@@ -74,7 +78,7 @@ function createNameMatchers(entries, setting, matchLiteral, flags = '') {
  * @returns {Promise<Array<vscode.QuickPickItem & { file: string }>>}
  */
 async function findIdentityFiles(uri, lookup) {
-    const setting = `cryptor.sops.ageKeyLookups for "${lookup.group}"`;
+    const setting = `cryptor["sops.ageKeyLookups"] for "${lookup.group}"`;
     if (!Array.isArray(lookup.directories) || !Array.isArray(lookup.filenames)) {
         throw new Error(`${setting} requires directories and filenames lists.`);
     }
@@ -182,7 +186,7 @@ async function selectIdentitySource(uri, groups) {
         const extensions = lookup.overrides && lookup.overrides.gpgExtensions;
         const matchExtensions = createNameMatchers(
             Array.isArray(extensions) ? extensions : [],
-            `cryptor.sops.ageKeyLookups for "${group}".overrides.gpgExtensions`,
+            `cryptor["sops.ageKeyLookups"].overrides.gpgExtensions for "${group}"`,
             (name, literal) => name.toLowerCase().endsWith(literal.trim().toLowerCase()),
             'i'
         );
@@ -210,7 +214,7 @@ async function selectDecryptedAgeIdentity(text) {
  * @param {(file: string) => Promise<string | undefined>} decryptIdentityFile
  */
 async function selectSopsAgeIdentity(uri, decryptIdentityFile) {
-    const groups = getIdentityLookupGroups();
+    const groups = getIdentityLookupGroups(uri);
     const selected = await selectIdentitySource(uri, groups);
     if (!selected || 'key' in selected) return selected;
     if (!selected.encrypted) return { file: selected.file };

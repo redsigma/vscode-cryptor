@@ -1,5 +1,6 @@
 const os = require('os');
 const path = require('path');
+const { getCryptorSetting } = require('./configuration.js');
 
 function withWorkspaceFolder(resolve) {
     return (context, name) => {
@@ -47,7 +48,16 @@ const additionalVariables = new Map(Object.entries({
     env: (context, name) => name ? process.env[name] || '' : undefined,
     config: ({ vscode, uri }, name) => {
         if (!name) return undefined;
-        const value = vscode.workspace.getConfiguration(undefined, uri).get(name);
+        let value;
+        if (name.startsWith('cryptor.')) {
+            const [, tool, key, ...properties] = name.split('.');
+            value = getCryptorSetting(`${tool}.${key}`, uri);
+            for (const property of properties) {
+                value = value && Object.prototype.hasOwnProperty.call(value, property) ? value[property] : undefined;
+            }
+        } else {
+            value = vscode.workspace.getConfiguration(undefined, uri).get(name);
+        }
         if (['string', 'number', 'boolean'].includes(typeof value)) return String(value);
     },
     extensionInstallFolder: ({ vscode }, id) => {

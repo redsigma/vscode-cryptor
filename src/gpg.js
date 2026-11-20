@@ -17,7 +17,7 @@ async function listKeys(env) {
     try {
         return parseKeys(output);
     } catch (error) {
-        throw new Error('GPG returned an invalid key listing. Check cryptor.gpg.listkeyscmd.');
+        throw new Error('GPG returned an invalid key listing. Check "gpg.listkeyscmd" in "cryptor".');
     }
 }
 

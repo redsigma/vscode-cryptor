@@ -17,6 +17,7 @@ function provideHover(document, position, descriptions) {
     let previous = '';
     let key = '';
     let match;
+    const containers = [];
 
     while ((match = tokens.exec(text)) && match.index <= offset) {
         const token = match[0];
@@ -25,7 +26,9 @@ function provideHover(document, position, descriptions) {
         if (offset < tokens.lastIndex) {
             if (previous !== ':' || !token.startsWith('"') || !key.startsWith('"')) return;
 
-            const variables = descriptions.get(key.slice(1, -1));
+            const name = key.slice(1, -1);
+            const setting = containers.length === 2 && containers[1] === 'cryptor' ? `cryptor.${name}` : name;
+            const variables = descriptions.get(setting);
             const description = variables && variables[placeholder.slice(2, -1)];
             if (typeof description === 'string') {
                 return new vscode.Hover(new vscode.MarkdownString(`\`${placeholder}\` ${description}`), range);
@@ -33,6 +36,11 @@ function provideHover(document, position, descriptions) {
             return;
         }
 
+        if (token === '{' || token === '[') {
+            containers.push(previous === ':' ? key.slice(1, -1) : undefined);
+        } else if (token === '}' || token === ']') {
+            containers.pop();
+        }
         key = previous;
         previous = token;
     }

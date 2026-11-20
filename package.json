@@ -31,7 +31,7 @@
     "categories": [
         "Other"
     ],
-    "activationEvents": ["onLanguage:jsonc"],
+    "activationEvents": ["onLanguage:jsonc", "onStartupFinished"],
     "main": "./src/extension",
     "contributes": {
         "commands": [
@@ -110,12 +110,12 @@
             ],
             "editor/context": [
                 {
-                    "when": "editorTextFocus && editorHasSelection && config.cryptor.gpg.showEditorContextMenus",
+                    "when": "editorTextFocus && editorHasSelection && !cryptor.hideGpgEditorContextMenus",
                     "command": "extension.cryptor.gpg.encryptSelection",
                     "group": "cryptor@7"
                 },
                 {
-                    "when": "editorTextFocus && editorHasSelection && config.cryptor.gpg.showEditorContextMenus",
+                    "when": "editorTextFocus && editorHasSelection && !cryptor.hideGpgEditorContextMenus",
                     "command": "extension.cryptor.gpg.decryptSelection",
                     "group": "cryptor@7"
                 }
@@ -148,203 +148,200 @@
                 }
             ]
         },
-        "configuration": [
-            {
-                "id": "cryptor.gpg",
-                "type": "object",
-                "title": "GPG",
-                "order": 1,
-                "properties": {
-                    "cryptor.gpg.showEditorContextMenus": {
-                        "type": "boolean",
-                        "default": true,
-                        "description": "Show editor context menus."
+        "configuration": {
+            "title": "Cryptor",
+            "properties": {
+                "cryptor": {
+                    "type": "object",
+                    "scope": "machine",
+                    "description": "GPG and SOPS settings for Cryptor on the extension host.",
+                    "default": {
+                        "gpg.showEditorContextMenus": true,
+                        "gpg.passphrases": [],
+                        "gpg.encryptedFileSuffix": "asc",
+                        "gpg.encryptedBinaryFileSuffix": "gpg",
+                        "gpg.env": {},
+                        "gpg.encryptcmd": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
+                        "gpg.encryptselectioncmd": "--batch --no-symkey-cache ${encryptcmd} --encrypt",
+                        "gpg.encryptfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd}",
+                        "gpg.encryptbinaryfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd} --no-armor",
+                        "gpg.symmetricencryptcmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --armor --output - --symmetric -- ${source}",
+                        "gpg.symmetricencryptbinaryfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-armor --output - --symmetric -- ${source}",
+                        "gpg.decryptcmd": "--decrypt",
+                        "gpg.decryptselectioncmd": "--batch --no-symkey-cache ${decryptcmd}",
+                        "gpg.decryptfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
+                        "gpg.signcmd": "--default-key ${recipientID} --trust-model always",
+                        "gpg.signselectioncmd": "--batch ${signcmd} --clearsign",
+                        "gpg.verifycmd": "--batch --trust-model always --status-fd 1 --verify",
+                        "gpg.listkeyscmd": "--batch --list-keys --fixed-list-mode --fingerprint --with-colons",
+                        "sops.path": "",
+                        "sops.env": {},
+                        "sops.ageKeyLookups": []
                     },
-                    "cryptor.gpg.passphrases": {
-                        "type": "array",
-                        "scope": "application",
-                        "items": {
-                            "type": "object",
-                            "required": [
-                                "email",
-                                "passphrase"
-                            ],
-                            "properties": {
-                                "email": {
-                                    "type": "string",
-                                    "description": "Email linked to the GPG key."
-                                },
-                                "description": {
-                                    "type": "string",
-                                    "description": "Optional description for the GPG key."
-                                },
-                                "passphrase": {
-                                    "type": "string",
-                                    "description": "Passphrase for the GPG Key."
-                                }
-                            }
-                        }
-                    },
-                    "cryptor.gpg.encryptedFileSuffix": {
-                        "type": "string",
-                        "default": "asc",
-                        "description": "Suffix for encrypted armored files."
-                    },
-                    "cryptor.gpg.encryptedBinaryFileSuffix": {
-                        "type": "string",
-                        "default": "gpg",
-                        "description": "Suffix for encrypted binary files."
-                    },
-                    "cryptor.gpg.env": {
-                        "type": "object",
-                        "additionalProperties": { "type": "string" },
-                        "default": {},
-                        "scope": "machine",
-                        "description": "Environment variables passed to GnuPG on the extension host."
-                    },
-                    "cryptor.gpg.encryptcmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
-                        "description": "Shared GPG options for selection and file encryption."
-                    },
-                    "cryptor.gpg.encryptselectioncmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --no-symkey-cache ${encryptcmd} --encrypt",
-                        "description": "GPG arguments for encrypting selected text."
-                    },
-                    "cryptor.gpg.encryptfilecmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --no-symkey-cache --encrypt ${encryptcmd}",
-                        "description": "GPG arguments for armored file encryption with a recipient."
-                    },
-                    "cryptor.gpg.encryptbinaryfilecmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --no-symkey-cache --encrypt ${encryptcmd} --no-armor",
-                        "description": "GPG arguments for binary file encryption with a recipient."
-                    },
-                    "cryptor.gpg.symmetricencryptcmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --armor --output - --symmetric -- ${source}",
-                        "description": "GPG arguments for encrypting armored files or selections with a passphrase."
-                    },
-                    "cryptor.gpg.symmetricencryptbinaryfilecmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-armor --output - --symmetric -- ${source}",
-                        "description": "GPG arguments for binary file encryption with a passphrase."
-                    },
-                    "cryptor.gpg.decryptcmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--decrypt",
-                        "description": "Shared GPG arguments for selection and file decryption."
-                    },
-                    "cryptor.gpg.decryptselectioncmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --no-symkey-cache ${decryptcmd}",
-                        "description": "GPG arguments for decrypting selected text."
-                    },
-                    "cryptor.gpg.decryptfilecmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
-                        "description": "GPG arguments for file decryption."
-                    },
-                    "cryptor.gpg.signcmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--default-key ${recipientID} --trust-model always",
-                        "description": "GPG options for clear-signing selections."
-                    },
-                    "cryptor.gpg.signselectioncmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch ${signcmd} --clearsign",
-                        "description": "GPG arguments for clear-signing selected text."
-                    },
-                    "cryptor.gpg.verifycmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --trust-model always --status-fd 1 --verify",
-                        "description": "GPG arguments for verifying selected signatures. Keep the status output on stdout."
-                    },
-                    "cryptor.gpg.listkeyscmd": {
-                        "type": "string",
-                        "scope": "machine",
-                        "default": "--batch --list-keys --fixed-list-mode --fingerprint --with-colons",
-                        "description": "GPG arguments for listing keys in the key picker. Keep the colon-separated output format."
-                    }
-                }
-            },
-            {
-                "id": "cryptor.sops",
-                "type": "object",
-                "title": "SOPS",
-                "order": 2,
-                "properties": {
-                    "cryptor.sops.path": {
-                        "type": "string",
-                        "default": "",
-                        "scope": "machine",
-                        "description": "Absolute path to the SOPS executable on the extension host. Leave empty to use SOPS from PATH."
-                    },
-                    "cryptor.sops.env": {
-                        "type": "object",
-                        "additionalProperties": { "type": "string" },
-                        "default": {},
-                        "scope": "machine",
-                        "description": "Environment variables passed to SOPS on the extension host."
-                    },
-                    "cryptor.sops.ageKeyLookups": {
-                        "type": "array",
-                        "default": [],
-                        "scope": "machine",
-                        "items": {
-                            "type": "object",
-                            "required": ["group", "directories", "filenames"],
-                            "additionalProperties": false,
-                            "properties": {
-                                "group": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "description": "Unique name shown in the age identity group picker."
-                                },
-                                "directories": {
-                                    "type": "array",
-                                    "items": { "type": "string", "minLength": 1 },
-                                    "minItems": 1,
-                                    "description": "Directory paths or strings starting with regex: to match immediate child directory names. The listed paths serve as parents for regex entries. With only regex entries, use the selected file's directory."
-                                },
-                                "filenames": {
-                                    "type": "array",
-                                    "items": { "type": "string", "minLength": 1 },
-                                    "minItems": 1,
-                                    "description": "Case-sensitive substrings or strings starting with regex: to match identity filenames."
-                                },
-                                "overrides": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "properties": {
-                                        "gpgExtensions": {
-                                            "type": "array",
-                                            "items": { "type": "string", "minLength": 1 },
-                                            "description": "Case-insensitive filename suffixes or strings starting with regex: that select files requiring GPG."
-                                        }
+                    "additionalProperties": false,
+                    "properties": {
+                        "gpg.showEditorContextMenus": {
+                            "type": "boolean",
+                            "description": "Show editor context menus."
+                        },
+                        "gpg.passphrases": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": [
+                                    "email",
+                                    "passphrase"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "description": "Email linked to the GPG key."
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Optional description for the GPG key."
+                                    },
+                                    "passphrase": {
+                                        "type": "string",
+                                        "description": "Passphrase for the GPG Key."
                                     }
                                 }
                             }
                         },
-                        "description": "Groups of directories and filenames to search when SOPS needs an age identity."
+                        "gpg.encryptedFileSuffix": {
+                            "type": "string",
+                            "description": "Suffix for encrypted armored files."
+                        },
+                        "gpg.encryptedBinaryFileSuffix": {
+                            "type": "string",
+                            "description": "Suffix for encrypted binary files."
+                        },
+                        "gpg.env": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            },
+                            "description": "Environment variables passed to GnuPG on the extension host."
+                        },
+                        "gpg.encryptcmd": {
+                            "type": "string",
+                            "description": "Shared GPG options for selection and file encryption."
+                        },
+                        "gpg.encryptselectioncmd": {
+                            "type": "string",
+                            "description": "GPG arguments for encrypting selected text."
+                        },
+                        "gpg.encryptfilecmd": {
+                            "type": "string",
+                            "description": "GPG arguments for armored file encryption with a recipient."
+                        },
+                        "gpg.encryptbinaryfilecmd": {
+                            "type": "string",
+                            "description": "GPG arguments for binary file encryption with a recipient."
+                        },
+                        "gpg.symmetricencryptcmd": {
+                            "type": "string",
+                            "description": "GPG arguments for encrypting armored files or selections with a passphrase."
+                        },
+                        "gpg.symmetricencryptbinaryfilecmd": {
+                            "type": "string",
+                            "description": "GPG arguments for binary file encryption with a passphrase."
+                        },
+                        "gpg.decryptcmd": {
+                            "type": "string",
+                            "description": "Shared GPG arguments for selection and file decryption."
+                        },
+                        "gpg.decryptselectioncmd": {
+                            "type": "string",
+                            "description": "GPG arguments for decrypting selected text."
+                        },
+                        "gpg.decryptfilecmd": {
+                            "type": "string",
+                            "description": "GPG arguments for file decryption."
+                        },
+                        "gpg.signcmd": {
+                            "type": "string",
+                            "description": "GPG options for clear-signing selections."
+                        },
+                        "gpg.signselectioncmd": {
+                            "type": "string",
+                            "description": "GPG arguments for clear-signing selected text."
+                        },
+                        "gpg.verifycmd": {
+                            "type": "string",
+                            "description": "GPG arguments for verifying selected signatures. Keep the status output on stdout."
+                        },
+                        "gpg.listkeyscmd": {
+                            "type": "string",
+                            "description": "GPG arguments for listing keys in the key picker. Keep the colon-separated output format."
+                        },
+                        "sops.path": {
+                            "type": "string",
+                            "description": "Absolute path to the SOPS executable on the extension host. Leave empty to use SOPS from PATH."
+                        },
+                        "sops.env": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            },
+                            "description": "Environment variables passed to SOPS on the extension host."
+                        },
+                        "sops.ageKeyLookups": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": [
+                                    "group",
+                                    "directories",
+                                    "filenames"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                    "group": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Unique name shown in the age identity group picker."
+                                    },
+                                    "directories": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1
+                                        },
+                                        "minItems": 1,
+                                        "description": "Directory paths or strings starting with regex: to match immediate child directory names. The listed paths serve as parents for regex entries. With only regex entries, use the selected file's directory."
+                                    },
+                                    "filenames": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1
+                                        },
+                                        "minItems": 1,
+                                        "description": "Case-sensitive substrings or strings starting with regex: to match identity filenames."
+                                    },
+                                    "overrides": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "properties": {
+                                            "gpgExtensions": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                },
+                                                "description": "Case-insensitive filename suffixes or strings starting with regex: that select files requiring GPG."
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "description": "Groups of directories and filenames to search when SOPS needs an age identity."
+                        }
                     }
                 }
             }
-        ]
+        }
     },
     "scripts": {
         "version": "auto-changelog -t keepachangelog -p && git add CHANGELOG.md"

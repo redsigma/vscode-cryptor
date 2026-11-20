@@ -6,6 +6,7 @@ const sops = require('./sops.js');
 const { resolveToolEnvironment, mergeToolEnvironment } = require('./toolEnvironment.js');
 const { selectSopsAgeIdentity } = require('./sopsIdentity.js');
 const { pickOrEnterCredential } = require('./credentialPrompt.js');
+const { getCryptorSetting } = require('./configuration.js');
 const { gpgArgumentHovers } = require('./gpgArguments.js');
 const { registerSettingHovers } = require('./settingHovers.js');
 // fs module for interacting with the file system
@@ -50,6 +51,15 @@ function activate(context) {
         context.subscriptions.push(registration);
     }
     context.subscriptions.push(registerSettingHovers(gpgArgumentHovers));
+    const updateEditorMenus = () => vscode.commands.executeCommand(
+        'setContext',
+        'cryptor.hideGpgEditorContextMenus',
+        getCryptorSetting('gpg.showEditorContextMenus') === false
+    );
+    updateEditorMenus();
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('cryptor')) updateEditorMenus();
+    }));
 }
 
 /**
@@ -62,22 +72,9 @@ module.exports = {
 	deactivate
 }
 
-/**
- * Prefer an explicit Cryptor setting, with a fallback for existing GPG settings.
- * @param {string} key
- */
-function getGpgSetting(key) {
-    const config = vscode.workspace.getConfiguration('cryptor.gpg');
-    const { globalValue, workspaceValue, workspaceFolderValue } = config.inspect(key) || {};
-    const isConfigured = [globalValue, workspaceValue, workspaceFolderValue].some(value => value !== undefined);
-    const value = config.get(key);
-    return isConfigured ? value : vscode.workspace.getConfiguration('gpg').get(key, value);
-}
-
 /** @param {vscode.Uri} uri */
 async function getGpgEnvironment(uri) {
-    const config = vscode.workspace.getConfiguration('cryptor.gpg');
-    const overrides = await resolveToolEnvironment(config.get('env', {}), uri, 'cryptor.gpg.env');
+    const overrides = await resolveToolEnvironment(getCryptorSetting('gpg.env', uri), uri, 'cryptor["gpg.env"]');
     return Object.keys(overrides).length ? mergeToolEnvironment(overrides) : undefined;
 }
 
@@ -107,9 +104,8 @@ async function runSops(operation, uri) {
  * @param {vscode.Uri} uri
  */
 async function transformSopsFile(operation, uri) {
-    const config = vscode.workspace.getConfiguration('cryptor.sops');
-    const executable = config.get('path', '');
-    const env = await resolveToolEnvironment(config.get('env', {}), uri, 'cryptor.sops.env');
+    const executable = getCryptorSetting('sops.path', uri);
+    const env = await resolveToolEnvironment(getCryptorSetting('sops.env', uri), uri, 'cryptor["sops.env"]');
     try {
         return await sops.transformFile(operation, uri.fsPath, executable, { env });
     } catch (error) {
@@ -194,7 +190,7 @@ async function decryptSelection(textEditor) {
  */
 async function encryptGpgFile(uri, format) {
     const inputFilePath = uri.fsPath;
-    const suffix = getGpgSetting(format === 'binary' ? 'encryptedBinaryFileSuffix' : 'encryptedFileSuffix');
+    const suffix = getCryptorSetting(format === 'binary' ? 'gpg.encryptedBinaryFileSuffix' : 'gpg.encryptedFileSuffix', uri);
     const destFilePath = `${inputFilePath}.${suffix}`;
 
     try {
@@ -269,7 +265,7 @@ async function checkFile(inputFilePath, destFilePath) {
 }
 
 function getStoredPassphraseItems() {
-    const configured = getGpgSetting('passphrases');
+    const configured = getCryptorSetting('gpg.passphrases');
     const passphrases = Array.isArray(configured) ? configured : [];
     return passphrases.filter(entry => entry && typeof entry.passphrase === 'string').map(entry => ({
         label: `<${entry.email}>`,

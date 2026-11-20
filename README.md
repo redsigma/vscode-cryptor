@@ -18,17 +18,21 @@ Use GnuPG and SOPS to encrypt and decrypt files in VS Code. GnuPG also supports 
 - To decrypt text, select it and choose `GPG: Decrypt Selection` from the Command Palette.
 - To encrypt a file, right-click it in Explorer and choose **GPG: Encrypt binary file** for binary OpenPGP or **GPG: Encrypt armored file** for ASCII-armored output. Both offer recipient keys and passphrases. The default suffixes are `.gpg` and `.asc`, respectively.
 
+Put Cryptor settings in a single `"cryptor"` object in VS Code User Settings, or in Remote Settings for a remote window. To migrate flat settings, move all your `cryptor.*` keys into that object and remove the `cryptor.` prefix from each key.
+
 ### Using stored passphrase in settings
-- Edit your local `settings.json` and add the following:
+- Add `gpg.passphrases` to your `cryptor` object:
   ```json
   {
-      "cryptor.gpg.passphrases": [
-          {
-              "email": "test@test.com",
-              "description": "My PGP Test Key",
-              "passphrase": "MyPassphrase"
-          }
-      ]
+      "cryptor": {
+          "gpg.passphrases": [
+              {
+                  "email": "test@test.com",
+                  "description": "My PGP Test Key",
+                  "passphrase": "MyPassphrase"
+              }
+          ]
+      }
   }
   ```
 - Stored passphrases appear in the file decryption prompt and the encryption picker. Choose a passphrase to encrypt symmetrically, or choose **Enter passphrase manually…** to type one. Public GPG keys in the picker encrypt for a recipient.
@@ -41,19 +45,21 @@ Override these defaults in VS Code user settings. Leaving the settings unset use
 
 ```json
 {
-    "cryptor.gpg.encryptcmd": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
-    "cryptor.gpg.encryptselectioncmd": "--batch --no-symkey-cache ${encryptcmd} --encrypt",
-    "cryptor.gpg.encryptfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd}",
-    "cryptor.gpg.encryptbinaryfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd} --no-armor",
-    "cryptor.gpg.symmetricencryptcmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --armor --output - --symmetric -- ${source}",
-    "cryptor.gpg.symmetricencryptbinaryfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-armor --output - --symmetric -- ${source}",
-    "cryptor.gpg.decryptcmd": "--decrypt",
-    "cryptor.gpg.decryptselectioncmd": "--batch --no-symkey-cache ${decryptcmd}",
-    "cryptor.gpg.decryptfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
-    "cryptor.gpg.signcmd": "--default-key ${recipientID} --trust-model always",
-    "cryptor.gpg.signselectioncmd": "--batch ${signcmd} --clearsign",
-    "cryptor.gpg.verifycmd": "--batch --trust-model always --status-fd 1 --verify",
-    "cryptor.gpg.listkeyscmd": "--batch --list-keys --fixed-list-mode --fingerprint --with-colons"
+    "cryptor": {
+        "gpg.encryptcmd": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
+        "gpg.encryptselectioncmd": "--batch --no-symkey-cache ${encryptcmd} --encrypt",
+        "gpg.encryptfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd}",
+        "gpg.encryptbinaryfilecmd": "--batch --no-symkey-cache --encrypt ${encryptcmd} --no-armor",
+        "gpg.symmetricencryptcmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --armor --output - --symmetric -- ${source}",
+        "gpg.symmetricencryptbinaryfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-armor --output - --symmetric -- ${source}",
+        "gpg.decryptcmd": "--decrypt",
+        "gpg.decryptselectioncmd": "--batch --no-symkey-cache ${decryptcmd}",
+        "gpg.decryptfilecmd": "--batch --no-symkey-cache --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
+        "gpg.signcmd": "--default-key ${recipientID} --trust-model always",
+        "gpg.signselectioncmd": "--batch ${signcmd} --clearsign",
+        "gpg.verifycmd": "--batch --trust-model always --status-fd 1 --verify",
+        "gpg.listkeyscmd": "--batch --list-keys --fixed-list-mode --fingerprint --with-colons"
+    }
 }
 ```
 
@@ -66,12 +72,14 @@ Override these defaults in VS Code user settings. Leaving the settings unset use
 - Keep `--verify` and `--status-fd 1` in `verifycmd` so Cryptor can read GPG's signature status.
 - Use single or double quotes around literal arguments containing spaces. Substituted keys and paths already stay together as single arguments. Cryptor passes the arguments directly to GPG and sends file decryption passphrases through standard input.
 
-Use `cryptor.gpg.env` to set environment variables for GPG commands. For example, set `GNUPGHOME` to use a separate keyring for the recipient picker, encryption, decryption, signing, and verification.
+Use `gpg.env` in your `cryptor` object to set environment variables for GPG commands. For example, set `GNUPGHOME` to use a separate keyring for the recipient picker, encryption, decryption, signing, and verification.
 
 ```json
 {
-    "cryptor.gpg.env": {
-        "GNUPGHOME": "${userHome}/.gnupg-work"
+    "cryptor": {
+        "gpg.env": {
+            "GNUPGHOME": "${userHome}/.gnupg-work"
+        }
     }
 }
 ```
@@ -82,18 +90,20 @@ Right-click a file in Explorer and choose **SOPS: Encrypt file** or **SOPS: Decr
 
 Cryptor runs SOPS from the selected file's directory, so SOPS can find `.sops.yaml` there or in a parent directory. SOPS matches creation rules against the selected input path. Key providers and credentials use the usual SOPS configuration and environment.
 
-Set `cryptor.sops.env` in VS Code user settings on the extension host to override environment variables for SOPS encryption and decryption. For example:
+Set `sops.env` in your `cryptor` object to override environment variables for SOPS encryption and decryption. For example:
 
 ```json
 {
-    "cryptor.sops.env": {
-        "SOPS_AGE_KEY_FILE": "${workspaceFolder}/.keys/age.txt",
-        "SOPS_AGE_SSH_PRIVATE_KEY_FILE": "${userHome}/.ssh/id_ed25519"
+    "cryptor": {
+        "sops.env": {
+            "SOPS_AGE_KEY_FILE": "${workspaceFolder}/.keys/age.txt",
+            "SOPS_AGE_SSH_PRIVATE_KEY_FILE": "${userHome}/.ssh/id_ed25519"
+        }
     }
 }
 ```
 
-Both `cryptor.gpg.env` and `cryptor.sops.env` use standard VS Code `${…}` syntax. Workspace and file variables use the file selected in Explorer or the document targeted by an editor command. `${workspaceFolder:Name}` selects a named root in a multi-root workspace. `${cwd}` resolves to the workspace folder when available. Editor variables such as `${lineNumber}` and `${selectedText}` use the active editor. Cryptor also resolves `${userHome}`, `${env:NAME}`, `${config:setting}`, `${execPath}`, `${extensionInstallFolder:publisher.extension}`, and `${defaultBuildTask}`. `${env:NAME}` reads the extension host's inherited environment.
+Both `gpg.env` and `sops.env` use standard VS Code `${…}` syntax. Workspace and file variables use the file selected in Explorer or the document targeted by an editor command. `${workspaceFolder:Name}` selects a named root in a multi-root workspace. `${cwd}` resolves to the workspace folder when available. Editor variables such as `${lineNumber}` and `${selectedText}` use the active editor. Cryptor also resolves `${userHome}`, `${env:NAME}`, `${config:setting}`, `${execPath}`, `${extensionInstallFolder:publisher.extension}`, and `${defaultBuildTask}`. `${env:NAME}` reads the extension host's inherited environment.
 
 `${command:…}` and `${input:…}` use task and debug configuration and are resolved there by VS Code.
 
@@ -103,20 +113,28 @@ If SOPS cannot find a matching age identity, Cryptor shows your configured looku
 
 ```json
 {
-    "cryptor.sops.ageKeyLookups": [
-        {
-            "group": "Work",
-            "directories": [
-                "./",
-                "${workspaceFolder}/.vscode",
-                "regex:^keys(?:-.+)?$"
-            ],
-            "filenames": [".age-key", "regex:^age\\.txt$"],
-            "overrides": {
-                "gpgExtensions": [".gpg", "regex:\\.(?:pgp|myowngpgcustom)$"]
+    "cryptor": {
+        "sops.ageKeyLookups": [
+            {
+                "group": "Work",
+                "directories": [
+                    "./",
+                    "${workspaceFolder}/.vscode",
+                    "regex:^keys(?:-.+)?$"
+                ],
+                "filenames": [
+                    ".age-key",
+                    "regex:^age\\.txt$"
+                ],
+                "overrides": {
+                    "gpgExtensions": [
+                        ".gpg",
+                        "regex:\\.(?:pgp|myowngpgcustom)$"
+                    ]
+                }
             }
-        }
-    ]
+        ]
+    }
 }
 ```
 
@@ -128,7 +146,7 @@ Plain strings in `filenames` match substrings, and plain strings in `overrides.g
 
 If the chosen filename matches an entry in `overrides.gpgExtensions`, Cryptor opens the usual GPG passphrase prompt and reads the decrypted identities in memory. It uses a single distinct key automatically. If there are several keys, the picker shows only a short suffix for each. The selected key is passed to SOPS for that attempt. Omit `gpgExtensions` or set it to `[]` to pass the chosen file directly to SOPS.
 
-Cryptor looks for SOPS on the extension host's `PATH`. To use a specific executable, set `cryptor.sops.path` to its absolute path in VS Code's user settings.
+Cryptor looks for SOPS on the extension host's `PATH`. To use a specific executable, set `sops.path` in your `cryptor` object to its absolute path.
 
 ## Requirements
 

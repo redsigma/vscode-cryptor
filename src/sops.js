@@ -11,7 +11,7 @@ class AgeIdentityError extends Error {}
 async function findExecutable(configuredPath, env) {
     if (configuredPath) {
         if (!path.isAbsolute(configuredPath)) {
-            throw new Error('Set cryptor.sops.path to the absolute path of the SOPS executable.');
+            throw new Error('Set "sops.path" in "cryptor" to the absolute path of the SOPS executable.');
         }
         return configuredPath;
     }
@@ -29,7 +29,7 @@ async function findExecutable(configuredPath, env) {
         }
     }
 
-    throw new Error('SOPS was not found on PATH. Set cryptor.sops.path to its executable.');
+    throw new Error('SOPS was not found on PATH. Set "sops.path" in "cryptor" to its executable.');
 }
 
 function getOutputPath(operation, source) {
@@ -77,7 +77,7 @@ function run(executable, operation, source, output, env) {
     return new Promise((resolve, reject) => {
         execFile(executable, args, options, (error, stdout, stderr) => {
             if (error && error.code === 'ENOENT') {
-                reject(new Error(`Could not run SOPS at ${executable}. Check cryptor.sops.path.`));
+                reject(new Error(`Could not run SOPS at ${executable}. Check "sops.path" in "cryptor".`));
             } else if (error) {
                 const message = stderr.trim() || error.message;
                 const keys = ((env || process.env).SOPS_AGE_KEY || '').match(/AGE-[A-Z0-9-]+/gi) || [];

@@ -1,8 +1,8 @@
-const vscode = require('vscode');
+const { getCryptorSetting } = require('./configuration.js');
 
 const recipientID = 'Email address of the selected GPG key.';
-const encryptcmd = 'Inserts the arguments from `cryptor.gpg.encryptcmd`. Use it as a separate argument.';
-const decryptcmd = 'Inserts the arguments from `cryptor.gpg.decryptcmd`. Use it as a separate argument.';
+const encryptcmd = 'Inserts arguments from `gpg.encryptcmd` in the `cryptor` setting. Use it as a separate argument.';
+const decryptcmd = 'Inserts arguments from `gpg.decryptcmd` in the `cryptor` setting. Use it as a separate argument.';
 const gpgArgumentHovers = {
     'cryptor.gpg.encryptcmd': { recipientID },
     'cryptor.gpg.signcmd': { recipientID },
@@ -18,7 +18,7 @@ const gpgArgumentHovers = {
     'cryptor.gpg.decryptselectioncmd': { decryptcmd },
     'cryptor.gpg.signselectioncmd': {
         recipientID,
-        signcmd: 'Inserts the arguments from `cryptor.gpg.signcmd`. Use it as a separate argument.',
+        signcmd: 'Inserts arguments from `gpg.signcmd` in the `cryptor` setting. Use it as a separate argument.',
     },
     'cryptor.gpg.decryptfilecmd': {
         source: 'Path to the selected encrypted file.',
@@ -65,8 +65,8 @@ function splitArguments(template, setting) {
  * @returns {string[]}
  */
 function getCommandArguments(key, variables = {}) {
-    const setting = `cryptor.gpg.${key}`;
-    const template = vscode.workspace.getConfiguration('cryptor.gpg').get(key);
+    const setting = `"gpg.${key}" in "cryptor"`;
+    const template = getCryptorSetting(`gpg.${key}`);
     if (typeof template !== 'string') throw new Error(`${setting} must be an argument string.`);
 
     const replacements = new Map(Object.entries(variables));
