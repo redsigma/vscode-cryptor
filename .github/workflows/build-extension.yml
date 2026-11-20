@@ -1,0 +1,87 @@
+name: Build Cryptor VSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Attach the VSIX to a GitHub Release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      VSCE_VERSION: '4.1.1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Build VSIX
+        run: npm exec --yes --package="@vscode/vsce@$VSCE_VERSION" -- vsce package --out cryptor.vsix
+
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v7
+        with:
+          path: cryptor.vsix
+          archive: false
+          if-no-files-found: error
+
+  release:
+    if: ${{ inputs.publish }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: cryptor-release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download the built VSIX
+        uses: actions/download-artifact@v8
+        with:
+          name: cryptor.vsix
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="v$(jq -er '.version' package.json)"
+          tag_commit=$(git rev-parse --verify --quiet "refs/tags/${tag}^{commit}" || true)
+
+          if [[ -n "$tag_commit" && "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::Tag $tag points to a different commit. Bump the version in package.json before releasing."
+            exit 1
+          fi
+
+          if release=$(gh release view "$tag" --json assets,isDraft,targetCommitish); then
+            if [[ -z "$tag_commit" && "$(jq -r '.targetCommitish' <<< "$release")" != "$GITHUB_SHA" ]]; then
+              echo "::error::Release $tag targets a different commit."
+              exit 1
+            fi
+
+            if ! jq -e '.assets | any(.name == "cryptor.vsix" and .state == "uploaded")' <<< "$release" > /dev/null; then
+              gh release upload "$tag" cryptor.vsix
+            fi
+            if jq -e '.isDraft' <<< "$release" > /dev/null; then
+              gh release edit "$tag" --draft=false
+            fi
+          else
+            gh release create "$tag" cryptor.vsix --target "$GITHUB_SHA" --title "Cryptor $tag" --generate-notes
+          fi

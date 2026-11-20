@@ -1,0 +1,237 @@
+{
+    "name": "cryptor",
+    "displayName": "Cryptor",
+    "description": "GnuPG and SOPS encryption and decryption, plus GnuPG signing, in VS Code",
+    "version": "1.0.0",
+    "publisher": "redsigma",
+    "author": {
+        "name": "RedSigma"
+    },
+    "homepage": "https://github.com/redsigma/vscode-cryptor",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/redsigma/vscode-cryptor"
+    },
+    "icon": "images/icon.png",
+    "bugs": {
+        "url": "https://github.com/redsigma/vscode-cryptor/issues"
+    },
+    "engines": {
+        "vscode": "^1.74.0"
+    },
+    "keywords": [
+        "gpg",
+        "gnupg",
+        "pgp",
+        "sops",
+        "encrypt",
+        "decrypt"
+    ],
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": ["onLanguage:jsonc"],
+    "main": "./src/extension",
+    "contributes": {
+        "commands": [
+            {
+                "command": "extension.cryptor.gpg.encryptSelection",
+                "title": "Encrypt Selection",
+                "category": "GPG",
+                "when": "editorHasSelection"
+            },
+            {
+                "command": "extension.cryptor.gpg.decryptSelection",
+                "title": "Decrypt Selection",
+                "category": "GPG",
+                "when": "editorHasSelection"
+            },
+            {
+                "command": "extension.cryptor.gpg.encryptArmoredFile",
+                "title": "GPG: Encrypt armored file",
+                "category": "GPG"
+            },
+            {
+                "command": "extension.cryptor.gpg.decryptFile",
+                "title": "GPG: Decrypt file",
+                "category": "GPG"
+            },
+            {
+                "command": "extension.cryptor.gpg.clearSignSelection",
+                "title": "Sign Selection (clear-sign)",
+                "category": "GPG",
+                "when": "editorHasSelection"
+            },
+            {
+                "command": "extension.cryptor.gpg.validateSelectionClearSign",
+                "title": "Verify Selected Signature",
+                "category": "GPG",
+                "when": "editorHasSelection"
+            },
+            {
+                "command": "extension.cryptor.sops.encryptFile",
+                "title": "SOPS: Encrypt file",
+                "category": "Cryptor"
+            },
+            {
+                "command": "extension.cryptor.sops.decryptFile",
+                "title": "SOPS: Decrypt file",
+                "category": "Cryptor"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                {
+                    "when": "false",
+                    "command": "extension.cryptor.gpg.encryptArmoredFile"
+                },
+                {
+                    "when": "false",
+                    "command": "extension.cryptor.gpg.decryptFile"
+                },
+                {
+                    "when": "false",
+                    "command": "extension.cryptor.sops.encryptFile"
+                },
+                {
+                    "when": "false",
+                    "command": "extension.cryptor.sops.decryptFile"
+                }
+            ],
+            "editor/context": [
+                {
+                    "when": "editorTextFocus && editorHasSelection && config.cryptor.gpg.showEditorContextMenus",
+                    "command": "extension.cryptor.gpg.encryptSelection",
+                    "group": "cryptor@7"
+                },
+                {
+                    "when": "editorTextFocus && editorHasSelection && config.cryptor.gpg.showEditorContextMenus",
+                    "command": "extension.cryptor.gpg.decryptSelection",
+                    "group": "cryptor@7"
+                }
+            ],
+            "explorer/context": [
+                {
+                    "when": "sideBarFocus && activeViewlet == 'workbench.view.explorer'",
+                    "command": "extension.cryptor.gpg.encryptArmoredFile",
+                    "group": "cryptor@7"
+                },
+                {
+                    "when": "sideBarFocus && activeViewlet == 'workbench.view.explorer' && resourceExtname =~ /(\\.asc|\\.gpg)$/",
+                    "command": "extension.cryptor.gpg.decryptFile",
+                    "group": "cryptor@7"
+                },
+                {
+                    "when": "!explorerResourceIsFolder && resourceScheme =~ /^(file|vscode-remote)$/",
+                    "command": "extension.cryptor.sops.encryptFile",
+                    "group": "cryptor-sops@1"
+                },
+                {
+                    "when": "!explorerResourceIsFolder && resourceScheme =~ /^(file|vscode-remote)$/",
+                    "command": "extension.cryptor.sops.decryptFile",
+                    "group": "cryptor-sops@2"
+                }
+            ]
+        },
+        "configuration": {
+            "type": "object",
+            "title": "Cryptor",
+            "properties": {
+                "cryptor.gpg.showEditorContextMenus": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show editor context menus."
+                },
+                "cryptor.gpg.passphrases": {
+                    "type": "array",
+                    "scope": "application",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "email",
+                            "passphrase"
+                        ],
+                        "properties": {
+                            "email": {
+                                "type": "string",
+                                "description": "Email linked to the GPG key."
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Optional description for the GPG key."
+                            },
+                            "passphrase": {
+                                "type": "string",
+                                "description": "Passphrase for the GPG Key."
+                            }
+                        }
+                    }
+                },
+                "cryptor.gpg.encryptedFileSuffix": {
+                    "type": "string",
+                    "default": "asc",
+                    "description": "Suffix for encrypted armored files."
+                },
+                "cryptor.gpg.encryptcmd": {
+                    "type": "string",
+                    "scope": "machine",
+                    "default": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
+                    "description": "Shared GPG options for selection and file encryption."
+                },
+                "cryptor.gpg.encryptfilecmd": {
+                    "type": "string",
+                    "scope": "machine",
+                    "default": "--batch --encrypt ${encryptcmd}",
+                    "description": "GPG arguments for file encryption."
+                },
+                "cryptor.gpg.decryptcmd": {
+                    "type": "string",
+                    "scope": "machine",
+                    "default": "--decrypt",
+                    "description": "Shared GPG arguments for selection and file decryption."
+                },
+                "cryptor.gpg.decryptfilecmd": {
+                    "type": "string",
+                    "scope": "machine",
+                    "default": "--batch --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
+                    "description": "GPG arguments for file decryption."
+                },
+                "cryptor.gpg.signcmd": {
+                    "type": "string",
+                    "scope": "machine",
+                    "default": "--default-key ${recipientID} --trust-model always",
+                    "description": "GPG options for clear-signing selections."
+                },
+                "cryptor.gpg.listkeyscmd": {
+                    "type": "string",
+                    "scope": "machine",
+                    "default": "--list-keys --fixed-list-mode --fingerprint --with-colons",
+                    "description": "GPG arguments for listing keys in the key picker. Keep the colon-separated output format."
+                },
+                "cryptor.sops.path": {
+                    "type": "string",
+                    "default": "",
+                    "scope": "machine",
+                    "description": "Absolute path to the SOPS executable on the extension host. Leave empty to use SOPS from PATH."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "version": "auto-changelog -t keepachangelog -p && git add CHANGELOG.md"
+    },
+    "devDependencies": {
+        "@types/mocha": "^5.2.7",
+        "@types/node": "^13.13.52",
+        "@types/vscode": "1.74.0",
+        "@vscode/test-electron": "^2.3.6",
+        "auto-changelog": "^2.4.0",
+        "eslint": "^6.8.0",
+        "typescript": "^3.9.10"
+    },
+    "dependencies": {
+        "fs": "0.0.1-security",
+        "gpg": "^0.6.0"
+    }
+}
