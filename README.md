@@ -41,24 +41,59 @@ Override these defaults in VS Code user settings. Leaving the settings unset use
 ```json
 {
     "cryptor.gpg.encryptcmd": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
+    "cryptor.gpg.encryptselectioncmd": "--batch ${encryptcmd} --encrypt",
     "cryptor.gpg.encryptfilecmd": "--batch --encrypt ${encryptcmd}",
     "cryptor.gpg.decryptcmd": "--decrypt",
+    "cryptor.gpg.decryptselectioncmd": "--batch ${decryptcmd}",
     "cryptor.gpg.decryptfilecmd": "--batch --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
     "cryptor.gpg.signcmd": "--default-key ${recipientID} --trust-model always",
-    "cryptor.gpg.listkeyscmd": "--list-keys --fixed-list-mode --fingerprint --with-colons"
+    "cryptor.gpg.signselectioncmd": "--batch ${signcmd} --clearsign",
+    "cryptor.gpg.verifycmd": "--batch --trust-model always --status-fd 1 --verify",
+    "cryptor.gpg.listkeyscmd": "--batch --list-keys --fixed-list-mode --fingerprint --with-colons"
 }
 ```
 
-- Hover over a placeholder in `settings.json` to see what it expands to. Keep `${encryptcmd}` and `${decryptcmd}` as separate arguments when using them in file templates.
+- Hover over a placeholder in `settings.json` to see what it expands to. Use `${encryptcmd}`, `${decryptcmd}`, and `${signcmd}` as separate arguments in the templates that include them.
+- If you previously customized `listkeyscmd` or `decryptfilecmd`, include `--batch` in that setting to retain batch mode.
 - `encryptfilecmd` reads the source file from standard input and writes encrypted data to standard output. In `decryptfilecmd`, keep `${source}` and `--output ${destination}` so Cryptor can write the decrypted file to its destination after GPG succeeds.
 - Keep `--list-keys` and `--with-colons` in `listkeyscmd` for the key picker.
+- Keep `--verify` and `--status-fd 1` in `verifycmd` so Cryptor can read GPG's signature status.
 - Use single or double quotes around literal arguments containing spaces. Substituted keys and paths already stay together as single arguments. Cryptor passes the arguments directly to GPG and sends file decryption passphrases through standard input.
+
+Use `cryptor.gpg.env` to set environment variables for GPG commands. For example, set `GNUPGHOME` to use a separate keyring for the recipient picker, encryption, decryption, signing, and verification.
+
+```json
+{
+    "cryptor.gpg.env": {
+        "GNUPGHOME": "${userHome}/.gnupg-work"
+    }
+}
+```
 
 ### SOPS files
 
 Right-click a file in Explorer and choose **SOPS: Encrypt file** or **SOPS: Decrypt file**. For example, encrypting `settings.yaml` writes `settings.sops.yaml`, and decrypting `settings.sops.yaml` writes the plaintext to `settings.dec.yaml`. Cryptor leaves the input in place and refuses to overwrite an existing output.
 
 Cryptor runs SOPS from the selected file's directory, so SOPS can find `.sops.yaml` there or in a parent directory. SOPS matches creation rules against the selected input path. Key providers and credentials use the usual SOPS configuration and environment.
+
+Set `cryptor.sops.env` in VS Code user settings on the extension host to override environment variables for SOPS encryption and decryption. For example:
+
+```json
+{
+    "cryptor.sops.env": {
+        "SOPS_AGE_KEY_FILE": "${workspaceFolder}/.keys/age.txt",
+        "SOPS_AGE_SSH_PRIVATE_KEY_FILE": "${userHome}/.ssh/id_ed25519"
+    }
+}
+```
+
+Both `cryptor.gpg.env` and `cryptor.sops.env` use standard VS Code `${…}` syntax. Workspace and file variables use the file selected in Explorer or the document targeted by an editor command. `${workspaceFolder:Name}` selects a named root in a multi-root workspace. `${cwd}` resolves to the workspace folder when available. Editor variables such as `${lineNumber}` and `${selectedText}` use the active editor. Cryptor also resolves `${userHome}`, `${env:NAME}`, `${config:setting}`, `${execPath}`, `${extensionInstallFolder:publisher.extension}`, and `${defaultBuildTask}`. `${env:NAME}` reads the extension host's inherited environment.
+
+`${command:…}` and `${input:…}` use task and debug configuration and are resolved there by VS Code.
+
+The VSIX build checks Cryptor's predefined variables against the published VS Code reference and reports additions or removals as warnings.
+
+If SOPS cannot find a matching age identity after applying these settings, paste your private `AGE-SECRET-KEY-1…` identity directly into the masked prompt or use its folder button to choose an identity file for that attempt.
 
 Cryptor looks for SOPS on the extension host's `PATH`. To use a specific executable, set `cryptor.sops.path` to its absolute path in VS Code's user settings.
 

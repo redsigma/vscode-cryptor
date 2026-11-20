@@ -25,6 +25,10 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Check predefined VS Code variables
+        continue-on-error: true
+        run: node .github/scripts/check-vscode-variables.js
+
       - name: Install extension dependencies
         run: npm ci
 

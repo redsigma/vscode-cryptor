@@ -1,17 +1,22 @@
 const vscode = require('vscode');
 
 const recipientID = 'Email address of the selected GPG key.';
+const encryptcmd = 'Inserts the arguments from `cryptor.gpg.encryptcmd`. Use it as a separate argument.';
+const decryptcmd = 'Inserts the arguments from `cryptor.gpg.decryptcmd`. Use it as a separate argument.';
 const gpgArgumentHovers = {
     'cryptor.gpg.encryptcmd': { recipientID },
     'cryptor.gpg.signcmd': { recipientID },
-    'cryptor.gpg.encryptfilecmd': {
+    'cryptor.gpg.encryptselectioncmd': { recipientID, encryptcmd },
+    'cryptor.gpg.encryptfilecmd': { recipientID, encryptcmd },
+    'cryptor.gpg.decryptselectioncmd': { decryptcmd },
+    'cryptor.gpg.signselectioncmd': {
         recipientID,
-        encryptcmd: 'Inserts the arguments from `cryptor.gpg.encryptcmd`. Use it as a separate argument.',
+        signcmd: 'Inserts the arguments from `cryptor.gpg.signcmd`. Use it as a separate argument.',
     },
     'cryptor.gpg.decryptfilecmd': {
         source: 'Path to the selected encrypted file.',
         destination: 'Output path for the decrypted file.',
-        decryptcmd: 'Inserts the arguments from `cryptor.gpg.decryptcmd`. Use it as a separate argument.',
+        decryptcmd,
     },
 };
 

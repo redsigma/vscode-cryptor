@@ -3,6 +3,8 @@ const vscode = require('vscode');
 // GPG command wrapper
 const gpg = require('./gpg.js');
 const sops = require('./sops.js');
+const { resolveToolEnvironment, mergeToolEnvironment } = require('./toolEnvironment.js');
+const { selectSopsAgeIdentity } = require('./sopsIdentity.js');
 const { gpgArgumentHovers } = require('./gpgArguments.js');
 const { registerSettingHovers } = require('./settingHovers.js');
 // fs module for interacting with the file system
@@ -67,6 +69,13 @@ function getGpgSetting(key) {
     return isConfigured ? value : vscode.workspace.getConfiguration('gpg').get(key, value);
 }
 
+/** @param {vscode.Uri} uri */
+async function getGpgEnvironment(uri) {
+    const config = vscode.workspace.getConfiguration('cryptor.gpg');
+    const overrides = await resolveToolEnvironment(config.get('env', {}), uri, 'cryptor.gpg.env');
+    return Object.keys(overrides).length ? mergeToolEnvironment(overrides) : undefined;
+}
+
 /**
  * @param {'encrypt' | 'decrypt'} operation
  * @param {vscode.Uri} uri
@@ -79,14 +88,31 @@ async function runSops(operation, uri) {
 
     let output;
     try {
-        const executable = vscode.workspace.getConfiguration('cryptor.sops').get('path', '');
-        output = await sops.transformFile(operation, uri.fsPath, executable);
+        output = await transformSopsFile(operation, uri);
     } catch (error) {
         vscode.window.showErrorMessage(`SOPS could not ${operation} the file. ${error.message}`);
         return;
     }
 
-    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(output));
+    if (output) await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(output));
+}
+
+/**
+ * @param {'encrypt' | 'decrypt'} operation
+ * @param {vscode.Uri} uri
+ */
+async function transformSopsFile(operation, uri) {
+    const config = vscode.workspace.getConfiguration('cryptor.sops');
+    const executable = config.get('path', '');
+    const env = await resolveToolEnvironment(config.get('env', {}), uri, 'cryptor.sops.env');
+    try {
+        return await sops.transformFile(operation, uri.fsPath, executable, { env });
+    } catch (error) {
+        if (operation !== 'decrypt' || !(error instanceof sops.AgeIdentityError)) throw error;
+    }
+
+    const identity = await selectSopsAgeIdentity();
+    if (identity) return sops.transformFile(operation, uri.fsPath, executable, { env, identity });
 }
 
 /**
@@ -94,7 +120,7 @@ async function runSops(operation, uri) {
  *
  * @param {vscode.TextEditor} textEditor
  */
-function encryptSelection(textEditor) {
+async function encryptSelection(textEditor) {
 
     let selection = textEditor.selection;
     let text = textEditor.document.getText(selection);
@@ -106,15 +132,17 @@ function encryptSelection(textEditor) {
         return;
     }
 
-    getRecipient().then(
-        /** @param {{email: string}} selected gpg key option */
-        selected => selected && gpg.encrypt(text, selected.email)
-    ).then(encrypted => {
-        if (encrypted === undefined) return;
-        // Replace selection
+    try {
+        const env = await getGpgEnvironment(textEditor.document.uri);
+        const selected = await getRecipient(env);
+        if (!selected) return;
+
+        const encrypted = await gpg.encrypt(text, selected.email, env);
         textEditor.edit(edit => edit.replace(selection, encrypted));
         vscode.window.setStatusBarMessage('GPG Encrypted!', 2000);
-    }).catch(error => vscode.window.showErrorMessage(error.message || 'Unable to encrypt text.'));
+    } catch (error) {
+        vscode.window.showErrorMessage(error.message || 'Unable to encrypt text.');
+    }
 }
 
 /**
@@ -122,8 +150,7 @@ function encryptSelection(textEditor) {
  *
  * @param {vscode.TextEditor} textEditor
  */
-function decryptSelection(textEditor)
-{
+async function decryptSelection(textEditor) {
     let selection = textEditor.selection;
     let text = textEditor.document.getText(selection);
 
@@ -134,16 +161,15 @@ function decryptSelection(textEditor)
         return;
     }
 
-    gpg.decrypt(text).then(
-        decrypted => {
-            textEditor.edit(editBuilder => editBuilder.replace(selection, decrypted));
-            vscode.window.setStatusBarMessage('GPG Decrypted!', 2000);
-        },
-        error => {
-            console.error("unable to decrypt text", error);
-            vscode.window.showErrorMessage(error.message || "unable to decrypt text");
-        }
-    );
+    try {
+        const env = await getGpgEnvironment(textEditor.document.uri);
+        const decrypted = await gpg.decrypt(text, env);
+        textEditor.edit(editBuilder => editBuilder.replace(selection, decrypted));
+        vscode.window.setStatusBarMessage('GPG Decrypted!', 2000);
+    } catch (error) {
+        console.error("unable to decrypt text", error);
+        vscode.window.showErrorMessage(error.message || "unable to decrypt text");
+    }
 }
 
 /**
@@ -151,27 +177,29 @@ function decryptSelection(textEditor)
  *
  * @param {vscode.Uri} uri
  */
-function encryptArmored(uri) {
+async function encryptArmored(uri) {
 
     let inputFilePath = uri.fsPath;
 
     let suffix = getGpgSetting('encryptedFileSuffix');
     let destFilePath = `${inputFilePath}.${suffix}`;
 
-    checkFile(inputFilePath, destFilePath).then(
-        overwrite => overwrite === undefined ? undefined : getRecipient()
-    ).then(
-        /** @param {{email: string}} selected gpg key option */
-        selected => selected && gpg.encryptFile(inputFilePath, destFilePath, selected.email)
-    ).then(resultFile => {
+    try {
+        if (await checkFile(inputFilePath, destFilePath) === undefined) return;
+
+        const env = await getGpgEnvironment(uri);
+        const selected = await getRecipient(env);
+        if (!selected) return;
+
+        const resultFile = await gpg.encryptFile(inputFilePath, destFilePath, selected.email, env);
         if (resultFile && fs.existsSync(resultFile)) {
             vscode.window.showTextDocument(vscode.Uri.file(resultFile));
             vscode.window.setStatusBarMessage('GPG Encrypted!', 2000);
         }
-    }).catch(error => {
+    } catch (error) {
         console.error("unable to encrypt file", error);
         vscode.window.showErrorMessage(error.message || "unable to encrypt file");
-    });
+    }
 }
 
 /**
@@ -191,13 +219,14 @@ async function decryptFile(uri) {
         const overwrite = await checkFile(inputFilePath, destFilePath);
         if (overwrite === undefined) return;
 
+        const env = await getGpgEnvironment(uri);
         const passphrase = await getPassphrase();
         if (!passphrase) {
             vscode.window.setStatusBarMessage('No passphrase provided', 2000);
             return;
         }
 
-        const resultFile = await gpg.decryptFile(inputFilePath, destFilePath, passphrase, overwrite);
+        const resultFile = await gpg.decryptFile(inputFilePath, destFilePath, passphrase, overwrite, env);
         vscode.window.showTextDocument(vscode.Uri.file(resultFile));
         vscode.window.setStatusBarMessage('GPG Decrypted!', 2000);
     } catch (error) {
@@ -263,10 +292,11 @@ function getPassphrase() {
 /**
  * Get recipient selected from public keys in the system
  *
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<{label: string; description: string; detail: string; key_id: string; email: string;}>}
  */
-function getRecipient() {
-    return gpg.listKeys().then(
+function getRecipient(env) {
+    return gpg.listKeys(env).then(
         publicKeys => publicKeys.map(
             /** @param {gpg.PublicKey} currentValue */
             currentValue => ({
@@ -287,7 +317,7 @@ function getRecipient() {
  *
  * @param {vscode.TextEditor} textEditor
  */
-function clearSignSelection(textEditor) {
+async function clearSignSelection(textEditor) {
 
     let selection = textEditor.selection;
     let text = textEditor.document.getText(selection);
@@ -299,15 +329,17 @@ function clearSignSelection(textEditor) {
         return;
     }
 
-    getRecipient().then(
-        /** @param {{email: string}} selected gpg key option */
-        selected => selected && gpg.clearSign(text, selected.email)
-    ).then(encrypted => {
-        if (encrypted === undefined) return;
-        // Replace selection
-        textEditor.edit(edit => edit.replace(selection, encrypted));
+    try {
+        const env = await getGpgEnvironment(textEditor.document.uri);
+        const selected = await getRecipient(env);
+        if (!selected) return;
+
+        const signed = await gpg.clearSign(text, selected.email, env);
+        textEditor.edit(edit => edit.replace(selection, signed));
         vscode.window.setStatusBarMessage('GPG ClearSigned!', 2000);
-    }).catch(error => vscode.window.showErrorMessage(error.message || 'Unable to sign text.'));
+    } catch (error) {
+        vscode.window.showErrorMessage(error.message || 'Unable to sign text.');
+    }
 }
 
 /**
@@ -315,7 +347,7 @@ function clearSignSelection(textEditor) {
  *
  * @param {vscode.TextEditor} textEditor
  */
-function validateSelectionClearSign(textEditor) {
+async function validateSelectionClearSign(textEditor) {
     let selection = textEditor.selection;
     let text = textEditor.document.getText(selection);
 
@@ -326,12 +358,15 @@ function validateSelectionClearSign(textEditor) {
         return;
     }
 
-    gpg.verifySignature(text).then(valid => {
-        if(valid) {
+    try {
+        const env = await getGpgEnvironment(textEditor.document.uri);
+        if (await gpg.verifySignature(text, env)) {
             vscode.window.setStatusBarMessage('GPG Valid Signature!', 2000);
-        }else {
+        } else {
             vscode.window.setStatusBarMessage('GPG INVALID Signature!', 5000);
             vscode.window.showWarningMessage("INVALID Signature");
         }
-    }).catch(err => console.error(err));
+    } catch (error) {
+        vscode.window.showErrorMessage(error.message || 'Unable to verify signature.');
+    }
 }

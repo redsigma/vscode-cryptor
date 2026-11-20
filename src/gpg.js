@@ -1,4 +1,3 @@
-const gpg = require('gpg');
 const { spawn } = require('child_process');
 const { constants, promises: fs } = require('fs');
 const path = require('path');
@@ -7,24 +6,17 @@ const { getCommandArguments } = require('./gpgArguments.js');
 /**
  * Returns a list of public keys available for encryption
  *
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<Array<PublicKey>>}
  */
-async function listKeys() {
+async function listKeys(env) {
     const args = getCommandArguments('listkeyscmd');
-
-    return new Promise(function (resolve, reject) {
-        gpg.call('', args, function (err, result) {
-            if (err) {
-                reject(err);
-            } else {
-                try {
-                    resolve(parseKeys(result.toString()));
-                } catch (error) {
-                    reject(new Error('GPG returned an invalid key listing. Check cryptor.gpg.listkeyscmd.'));
-                }
-            }
-        });
-    });
+    const output = await runGpg(args, '', env);
+    try {
+        return parseKeys(output);
+    } catch (error) {
+        throw new Error('GPG returned an invalid key listing. Check cryptor.gpg.listkeyscmd.');
+    }
 }
 
 /**
@@ -119,41 +111,27 @@ function parseKeys(stdout) {
  *
  * @param {string} text
  * @param {string} recipientID
- * @returns {Promise<String>} returns a promise for a encrypted string
+ * @param {NodeJS.ProcessEnv} [env]
  */
-async function encrypt(text, recipientID) {
-    const args = getCommandArguments('encryptcmd', { recipientID });
-
-    return new Promise(function (resolve, reject) {
-
-        gpg.encrypt(text, args, function (err, result) {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(result.toString());
-            }
-        });
-
+async function encrypt(text, recipientID, env) {
+    const args = getCommandArguments('encryptselectioncmd', {
+        recipientID,
+        encryptcmd: () => getCommandArguments('encryptcmd', { recipientID }),
     });
+    return runGpg(args, text, env);
 }
 
 /**
  * Decrypt a text given the passphrase
  *
  * @param {string} text
- * @returns {Promise<String>} returns a promise for a decrypted string
+ * @param {NodeJS.ProcessEnv} [env]
  */
-async function decrypt(text) {
-    const args = getCommandArguments('decryptcmd');
-    return new Promise(function (resolve, reject) {
-        gpg.call(text, args, function (err, result) {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(result.toString());
-            }
-        });
+async function decrypt(text, env) {
+    const args = getCommandArguments('decryptselectioncmd', {
+        decryptcmd: () => getCommandArguments('decryptcmd'),
     });
+    return runGpg(args, text, env);
 }
 
 /**
@@ -162,15 +140,14 @@ async function decrypt(text) {
  * @param {string} source
  * @param {string} dest
  * @param {string} recipientID
- * @param {boolean=} armored
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<String>} returns a promise with encrypted file path
  */
-async function encryptFile(source, dest, recipientID, armored = true) {
-    const options = getCommandArguments('encryptfilecmd', {
+async function encryptFile(source, dest, recipientID, env) {
+    const args = getCommandArguments('encryptfilecmd', {
         recipientID,
         encryptcmd: () => getCommandArguments('encryptcmd', { recipientID }),
     });
-    const args = armored ? options : options.filter(arg => arg !== '--armor' && arg !== '-a');
 
     return writeGpgOutput(dest, true, async temporaryOutput => {
         let input;
@@ -178,7 +155,7 @@ async function encryptFile(source, dest, recipientID, armored = true) {
         try {
             input = await fs.open(source, 'r');
             output = await fs.open(temporaryOutput, 'wx', 0o600);
-            await runFileEncryption(args, input.fd, output.fd);
+            await runGpg(args, input.fd, env, output.fd);
         } finally {
             await Promise.all([input && input.close(), output && output.close()]);
         }
@@ -214,24 +191,44 @@ async function writeGpgOutput(dest, overwrite, produceOutput) {
     }
 }
 
-function runFileEncryption(args, input, output) {
-    // The gpg dependency's streaming wrapper does not report a nonzero exit status.
+/**
+ * @param {string[]} args
+ * @param {string | Buffer | number} input Text or a file descriptor for stdin.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {number | 'pipe'} [output] File descriptor or captured stdout.
+ * @returns {Promise<string>}
+ */
+function runGpg(args, input, env, output = 'pipe') {
     return new Promise((resolve, reject) => {
         const child = spawn('gpg', args, {
-            stdio: [input, output, 'pipe'],
+            stdio: [typeof input === 'number' ? input : 'pipe', output, 'pipe'],
             windowsHide: true,
+            env,
         });
+        let stdout = '';
         let stderr = '';
+        let inputError;
+        if (child.stdout) {
+            child.stdout.setEncoding('utf8');
+            child.stdout.on('data', chunk => { stdout += chunk; });
+        }
         child.stderr.setEncoding('utf8');
         child.stderr.on('data', chunk => { stderr += chunk; });
         child.once('error', reject);
-        child.once('close', code => {
-            if (code === 0) {
-                resolve(undefined);
+        child.once('close', (code, signal) => {
+            if (code !== 0) {
+                const status = signal ? `signal ${signal}` : `exit code ${code}`;
+                reject(new Error(stderr.trim() || `GPG failed (${status}).`));
+            } else if (inputError && inputError.code !== 'EPIPE') {
+                reject(inputError);
             } else {
-                reject(new Error(stderr.trim() || `GPG encryption failed (exit code ${code}).`));
+                resolve(stdout);
             }
         });
+        if (child.stdin && typeof input !== 'number') {
+            child.stdin.on('error', error => { inputError = error; });
+            child.stdin.end(input);
+        }
     });
 }
 
@@ -242,22 +239,18 @@ function runFileEncryption(args, input, output) {
  * @param {string} dest
  * @param {string} passphrase
  * @param {boolean} [overwrite]
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<String>} returns a promise with decrypted file path
  */
-function decryptFile(source, dest, passphrase, overwrite = false) {
-    return writeGpgOutput(dest, overwrite, temporaryOutput => {
+function decryptFile(source, dest, passphrase, overwrite = false, env) {
+    return writeGpgOutput(dest, overwrite, async temporaryOutput => {
         const args = getCommandArguments('decryptfilecmd', {
             source,
             destination: temporaryOutput,
             decryptcmd: () => getCommandArguments('decryptcmd'),
         });
 
-        return new Promise((resolve, reject) => {
-            gpg.call(passphrase, args, error => {
-                if (error) reject(error);
-                else resolve(undefined);
-            });
-        });
+        await runGpg(args, passphrase, env);
     });
 }
 
@@ -265,25 +258,16 @@ function decryptFile(source, dest, passphrase, overwrite = false) {
  * validate clear-signed text
  *
  * @param {string} text
- * @returns {Promise<boolean>} returns if is a valid signature
+ * @param {NodeJS.ProcessEnv} [env]
  */
-function verifySignature(text) {
-
-    let args = [
-        '--trust-model', 'always' // so we don't get "no assurance this key belongs to the given user"
-    ];
-
-    return new Promise(function (resolve, reject) {
-
-        gpg.verifySignature(text, args, function (err, result) {
-            if (err) {
-                resolve(false);
-            } else {
-                resolve(result.toString().search(/good signature/i) > 0);
-            }
-        });
-
-    });
+async function verifySignature(text, env) {
+    const args = getCommandArguments('verifycmd');
+    try {
+        const status = await runGpg(args, text, env);
+        return /^\[GNUPG:\] GOODSIG\b/m.test(status);
+    } catch (error) {
+        return false;
+    }
 }
 
 /**
@@ -291,22 +275,14 @@ function verifySignature(text) {
  *
  * @param {string} text
  * @param {string} recipientID
- * @returns {Promise<String>} returns a promise for a encrypted string
+ * @param {NodeJS.ProcessEnv} [env]
  */
-async function clearSign(text, recipientID) {
-    const args = getCommandArguments('signcmd', { recipientID });
-
-    return new Promise(function (resolve, reject) {
-
-        gpg.clearsign(text, args, function (err, result) {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(result.toString());
-            }
-        });
-
+async function clearSign(text, recipientID, env) {
+    const args = getCommandArguments('signselectioncmd', {
+        recipientID,
+        signcmd: () => getCommandArguments('signcmd', { recipientID }),
     });
+    return runGpg(args, text, env);
 }
 
 // export the module

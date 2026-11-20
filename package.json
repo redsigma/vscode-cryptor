@@ -124,99 +124,149 @@
                 },
                 {
                     "when": "!explorerResourceIsFolder && resourceScheme =~ /^(file|vscode-remote)$/",
-                    "command": "extension.cryptor.sops.encryptFile",
+                    "command": "extension.cryptor.sops.decryptFile",
                     "group": "cryptor-sops@1"
                 },
                 {
                     "when": "!explorerResourceIsFolder && resourceScheme =~ /^(file|vscode-remote)$/",
-                    "command": "extension.cryptor.sops.decryptFile",
+                    "command": "extension.cryptor.sops.encryptFile",
                     "group": "cryptor-sops@2"
                 }
             ]
         },
-        "configuration": {
-            "type": "object",
-            "title": "Cryptor",
-            "properties": {
-                "cryptor.gpg.showEditorContextMenus": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Show editor context menus."
-                },
-                "cryptor.gpg.passphrases": {
-                    "type": "array",
-                    "scope": "application",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "email",
-                            "passphrase"
-                        ],
-                        "properties": {
-                            "email": {
-                                "type": "string",
-                                "description": "Email linked to the GPG key."
-                            },
-                            "description": {
-                                "type": "string",
-                                "description": "Optional description for the GPG key."
-                            },
-                            "passphrase": {
-                                "type": "string",
-                                "description": "Passphrase for the GPG Key."
+        "configuration": [
+            {
+                "id": "cryptor.gpg",
+                "type": "object",
+                "title": "GPG",
+                "order": 1,
+                "properties": {
+                    "cryptor.gpg.showEditorContextMenus": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Show editor context menus."
+                    },
+                    "cryptor.gpg.passphrases": {
+                        "type": "array",
+                        "scope": "application",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "email",
+                                "passphrase"
+                            ],
+                            "properties": {
+                                "email": {
+                                    "type": "string",
+                                    "description": "Email linked to the GPG key."
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Optional description for the GPG key."
+                                },
+                                "passphrase": {
+                                    "type": "string",
+                                    "description": "Passphrase for the GPG Key."
+                                }
                             }
                         }
+                    },
+                    "cryptor.gpg.encryptedFileSuffix": {
+                        "type": "string",
+                        "default": "asc",
+                        "description": "Suffix for encrypted armored files."
+                    },
+                    "cryptor.gpg.env": {
+                        "type": "object",
+                        "additionalProperties": { "type": "string" },
+                        "default": {},
+                        "scope": "machine",
+                        "description": "Environment variables passed to GnuPG on the extension host."
+                    },
+                    "cryptor.gpg.encryptcmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
+                        "description": "Shared GPG options for selection and file encryption."
+                    },
+                    "cryptor.gpg.encryptselectioncmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch ${encryptcmd} --encrypt",
+                        "description": "GPG arguments for encrypting selected text."
+                    },
+                    "cryptor.gpg.encryptfilecmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch --encrypt ${encryptcmd}",
+                        "description": "GPG arguments for file encryption."
+                    },
+                    "cryptor.gpg.decryptcmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--decrypt",
+                        "description": "Shared GPG arguments for selection and file decryption."
+                    },
+                    "cryptor.gpg.decryptselectioncmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch ${decryptcmd}",
+                        "description": "GPG arguments for decrypting selected text."
+                    },
+                    "cryptor.gpg.decryptfilecmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
+                        "description": "GPG arguments for file decryption."
+                    },
+                    "cryptor.gpg.signcmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--default-key ${recipientID} --trust-model always",
+                        "description": "GPG options for clear-signing selections."
+                    },
+                    "cryptor.gpg.signselectioncmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch ${signcmd} --clearsign",
+                        "description": "GPG arguments for clear-signing selected text."
+                    },
+                    "cryptor.gpg.verifycmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch --trust-model always --status-fd 1 --verify",
+                        "description": "GPG arguments for verifying selected signatures. Keep the status output on stdout."
+                    },
+                    "cryptor.gpg.listkeyscmd": {
+                        "type": "string",
+                        "scope": "machine",
+                        "default": "--batch --list-keys --fixed-list-mode --fingerprint --with-colons",
+                        "description": "GPG arguments for listing keys in the key picker. Keep the colon-separated output format."
                     }
-                },
-                "cryptor.gpg.encryptedFileSuffix": {
-                    "type": "string",
-                    "default": "asc",
-                    "description": "Suffix for encrypted armored files."
-                },
-                "cryptor.gpg.encryptcmd": {
-                    "type": "string",
-                    "scope": "machine",
-                    "default": "--trust-model always --recipient ${recipientID} --armor --trust-model always",
-                    "description": "Shared GPG options for selection and file encryption."
-                },
-                "cryptor.gpg.encryptfilecmd": {
-                    "type": "string",
-                    "scope": "machine",
-                    "default": "--batch --encrypt ${encryptcmd}",
-                    "description": "GPG arguments for file encryption."
-                },
-                "cryptor.gpg.decryptcmd": {
-                    "type": "string",
-                    "scope": "machine",
-                    "default": "--decrypt",
-                    "description": "Shared GPG arguments for selection and file decryption."
-                },
-                "cryptor.gpg.decryptfilecmd": {
-                    "type": "string",
-                    "scope": "machine",
-                    "default": "--batch --passphrase-fd 0 --pinentry-mode loopback --no-tty --quiet --output ${destination} ${decryptcmd} ${source}",
-                    "description": "GPG arguments for file decryption."
-                },
-                "cryptor.gpg.signcmd": {
-                    "type": "string",
-                    "scope": "machine",
-                    "default": "--default-key ${recipientID} --trust-model always",
-                    "description": "GPG options for clear-signing selections."
-                },
-                "cryptor.gpg.listkeyscmd": {
-                    "type": "string",
-                    "scope": "machine",
-                    "default": "--list-keys --fixed-list-mode --fingerprint --with-colons",
-                    "description": "GPG arguments for listing keys in the key picker. Keep the colon-separated output format."
-                },
-                "cryptor.sops.path": {
-                    "type": "string",
-                    "default": "",
-                    "scope": "machine",
-                    "description": "Absolute path to the SOPS executable on the extension host. Leave empty to use SOPS from PATH."
+                }
+            },
+            {
+                "id": "cryptor.sops",
+                "type": "object",
+                "title": "SOPS",
+                "order": 2,
+                "properties": {
+                    "cryptor.sops.path": {
+                        "type": "string",
+                        "default": "",
+                        "scope": "machine",
+                        "description": "Absolute path to the SOPS executable on the extension host. Leave empty to use SOPS from PATH."
+                    },
+                    "cryptor.sops.env": {
+                        "type": "object",
+                        "additionalProperties": { "type": "string" },
+                        "default": {},
+                        "scope": "machine",
+                        "description": "Environment variables passed to SOPS on the extension host."
+                    }
                 }
             }
-        }
+        ]
     },
     "scripts": {
         "version": "auto-changelog -t keepachangelog -p && git add CHANGELOG.md"
@@ -231,7 +281,6 @@
         "typescript": "^3.9.10"
     },
     "dependencies": {
-        "fs": "0.0.1-security",
-        "gpg": "^0.6.0"
+        "fs": "0.0.1-security"
     }
 }
