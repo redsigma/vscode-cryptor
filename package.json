@@ -263,6 +263,47 @@
                         "default": {},
                         "scope": "machine",
                         "description": "Environment variables passed to SOPS on the extension host."
+                    },
+                    "cryptor.sops.ageKeyLookups": {
+                        "type": "array",
+                        "default": [],
+                        "scope": "machine",
+                        "items": {
+                            "type": "object",
+                            "required": ["group", "directories", "filenames"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "group": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "Unique name shown in the age identity group picker."
+                                },
+                                "directories": {
+                                    "type": "array",
+                                    "items": { "type": "string", "minLength": 1 },
+                                    "minItems": 1,
+                                    "description": "Directory paths or strings starting with regex: to match immediate child directory names. The listed paths serve as parents for regex entries. With only regex entries, use the selected file's directory."
+                                },
+                                "filenames": {
+                                    "type": "array",
+                                    "items": { "type": "string", "minLength": 1 },
+                                    "minItems": 1,
+                                    "description": "Case-sensitive substrings or strings starting with regex: to match identity filenames."
+                                },
+                                "overrides": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "gpgExtensions": {
+                                            "type": "array",
+                                            "items": { "type": "string", "minLength": 1 },
+                                            "description": "Case-insensitive filename suffixes or strings starting with regex: that select files requiring GPG."
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Groups of directories and filenames to search when SOPS needs an age identity."
                     }
                 }
             }

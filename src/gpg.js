@@ -243,15 +243,32 @@ function runGpg(args, input, env, output = 'pipe') {
  * @returns {Promise<String>} returns a promise with decrypted file path
  */
 function decryptFile(source, dest, passphrase, overwrite = false, env) {
-    return writeGpgOutput(dest, overwrite, async temporaryOutput => {
-        const args = getCommandArguments('decryptfilecmd', {
-            source,
-            destination: temporaryOutput,
-            decryptcmd: () => getCommandArguments('decryptcmd'),
-        });
+    return writeGpgOutput(dest, overwrite, temporaryOutput => runFileDecryption(source, temporaryOutput, passphrase, env));
+}
 
-        await runGpg(args, passphrase, env);
+/**
+ * @param {string} source
+ * @param {string} destination GPG uses '-' for standard output.
+ * @param {string} passphrase
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {Promise<string>}
+ */
+function runFileDecryption(source, destination, passphrase, env) {
+    const args = getCommandArguments('decryptfilecmd', {
+        source,
+        destination,
+        decryptcmd: () => getCommandArguments('decryptcmd'),
     });
+    return runGpg(args, passphrase, env);
+}
+
+/**
+ * @param {string} source
+ * @param {string} passphrase
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+function decryptFileToText(source, passphrase, env) {
+    return runFileDecryption(source, '-', passphrase, env);
 }
 
 /**
@@ -292,6 +309,7 @@ module.exports = {
     decrypt: decrypt,
     encryptFile: encryptFile,
     decryptFile: decryptFile,
+    decryptFileToText: decryptFileToText,
     clearSign: clearSign,
     verifySignature: verifySignature,
 };

@@ -111,8 +111,15 @@ async function transformSopsFile(operation, uri) {
         if (operation !== 'decrypt' || !(error instanceof sops.AgeIdentityError)) throw error;
     }
 
-    const identity = await selectSopsAgeIdentity();
+    const identity = await selectSopsAgeIdentity(uri, decryptSopsIdentityFile);
     if (identity) return sops.transformFile(operation, uri.fsPath, executable, { env, identity });
+}
+
+/** @param {string} file */
+async function decryptSopsIdentityFile(file) {
+    const env = await getGpgEnvironment(vscode.Uri.file(file));
+    const passphrase = await getPassphrase();
+    if (passphrase) return gpg.decryptFileToText(file, passphrase, env);
 }
 
 /**

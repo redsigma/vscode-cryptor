@@ -65,19 +65,10 @@ function resolveVariable(name, context) {
 }
 
 /**
- * @param {Record<string, string>} configured
  * @param {import('vscode').Uri} uri
- * @param {string} setting
+ * @returns {(value: string, location: string) => Promise<string>}
  */
-async function resolveToolEnvironment(configured, uri, setting) {
-    if (!configured || typeof configured !== 'object' || Array.isArray(configured)) {
-        throw new Error(`${setting} must be an object with string values.`);
-    }
-
-    const result = Object.create(null);
-    const entries = Object.entries(configured);
-    if (!entries.length) return result;
-
+function createVariableExpander(uri) {
     const vscode = require('vscode');
     const folders = vscode.workspace.workspaceFolders || [];
     const fileFolder = vscode.workspace.getWorkspaceFolder(uri);
@@ -95,20 +86,40 @@ async function resolveToolEnvironment(configured, uri, setting) {
 
     const variablePattern = /\$\{[^{}]+\}/g;
     const replacements = new Map();
+    return async (value, location) => {
+        for (const token of value.match(variablePattern) || []) {
+            if (replacements.has(token)) continue;
+            const resolved = await resolveVariable(token.slice(2, -1), context);
+            if (resolved === undefined) {
+                throw new Error(`Cannot resolve ${token} in ${location}.`);
+            }
+            replacements.set(token, resolved);
+        }
+        return value.replace(variablePattern, token => replacements.get(token));
+    };
+}
+
+/**
+ * @param {Record<string, string>} configured
+ * @param {import('vscode').Uri} uri
+ * @param {string} setting
+ */
+async function resolveToolEnvironment(configured, uri, setting) {
+    if (!configured || typeof configured !== 'object' || Array.isArray(configured)) {
+        throw new Error(`${setting} must be an object with string values.`);
+    }
+
+    const result = Object.create(null);
+    const entries = Object.entries(configured);
+    if (!entries.length) return result;
+
+    const expand = createVariableExpander(uri);
     for (const [name, value] of entries) {
         if (!name || /[=\0]/.test(name) || typeof value !== 'string') {
             throw new Error(`${setting} must map valid environment variable names to strings.`);
         }
 
-        for (const token of value.match(variablePattern) || []) {
-            if (replacements.has(token)) continue;
-            const resolved = await resolveVariable(token.slice(2, -1), context);
-            if (resolved === undefined) {
-                throw new Error(`Cannot resolve ${token} in ${setting} for ${name}.`);
-            }
-            replacements.set(token, resolved);
-        }
-        const expanded = value.replace(variablePattern, token => replacements.get(token));
+        const expanded = await expand(value, `${setting} for ${name}`);
         if (expanded.includes('\0')) throw new Error(`${setting} contains an invalid value for ${name}.`);
         result[name] = expanded;
     }
@@ -141,4 +152,4 @@ function mergeToolEnvironment(overrides) {
     return env;
 }
 
-module.exports = { resolveToolEnvironment, mergeToolEnvironment, predefinedVariableNames: Object.freeze([...predefinedVariables.keys()]) };
+module.exports = { createVariableExpander, resolveToolEnvironment, mergeToolEnvironment, predefinedVariableNames: Object.freeze([...predefinedVariables.keys()]) };
