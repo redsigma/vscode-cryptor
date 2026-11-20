@@ -93,7 +93,7 @@ Both `cryptor.gpg.env` and `cryptor.sops.env` use standard VS Code `${…}` synt
 
 The VSIX build checks Cryptor's predefined variables against the published VS Code reference and reports additions or removals as warnings.
 
-If SOPS cannot find a matching age identity, Cryptor shows your configured lookup groups. Select a group or press Esc to paste a private `AGE-SECRET-KEY-1…` identity into the masked prompt. With no groups configured, the masked prompt opens directly. Each group has a unique name.
+If SOPS cannot find a matching age identity, Cryptor shows your configured lookup groups. Select a group or press **Esc** to paste a private `AGE-SECRET-KEY-1…` identity into the masked prompt. With no groups configured, the masked prompt opens directly. Each group has a unique name.
 
 ```json
 {
@@ -120,7 +120,7 @@ Cryptor searches the literal directory paths and uses directory regexes to match
 
 Plain strings in `filenames` match substrings, and plain strings in `overrides.gpgExtensions` match suffixes. Directory and filename matching is case-sensitive. GPG extension matching is case-insensitive for both literals and regexes. A regex matches the filename, so use `$` to anchor a suffix at the end.
 
-If the chosen filename matches an entry in `overrides.gpgExtensions`, Cryptor opens the usual GPG passphrase prompt, reads the decrypted identities in memory, and shows only a short suffix for each key. The selected key is passed to SOPS for that attempt. Omit `gpgExtensions` or set it to `[]` to pass the chosen file directly to SOPS.
+If the chosen filename matches an entry in `overrides.gpgExtensions`, Cryptor opens the usual GPG passphrase prompt and reads the decrypted identities in memory. It uses a single distinct key automatically. If there are several keys, the picker shows only a short suffix for each. The selected key is passed to SOPS for that attempt. Omit `gpgExtensions` or set it to `[]` to pass the chosen file directly to SOPS.
 
 Cryptor looks for SOPS on the extension host's `PATH`. To use a specific executable, set `cryptor.sops.path` to its absolute path in VS Code's user settings.
 

@@ -2,27 +2,13 @@ const { promises: fs } = require('fs');
 const path = require('path');
 const vscode = require('vscode');
 const { createVariableExpander } = require('./toolEnvironment.js');
+const { pickOrEnterCredential } = require('./credentialPrompt.js');
 
 const ageSecretPrefix = 'AGE-SECRET-KEY-1';
 const ageSecretPattern = /^AGE-SECRET-KEY-1[A-Z0-9]+$/;
 const regexPrefix = 'regex:';
 
 /** @typedef {{ group: string, directories: string[], filenames: string[], overrides?: { gpgExtensions?: string[] } }} AgeKeyLookup */
-
-/** @returns {Promise<{ key: string } | undefined>} */
-async function promptForAgeIdentity() {
-    const key = await vscode.window.showInputBox({
-        title: 'SOPS needs a matching age identity',
-        prompt: 'Paste your private age identity.',
-        placeHolder: 'AGE-SECRET-KEY-1…',
-        password: true,
-        ignoreFocusOut: true,
-        validateInput: value => ageSecretPattern.test(value.trim())
-            ? undefined
-            : 'Enter a private age identity beginning with AGE-SECRET-KEY-1.',
-    });
-    if (key !== undefined) return { key: key.trim() };
-}
 
 /** @returns {Map<string, AgeKeyLookup>} */
 function getIdentityLookupGroups() {
@@ -164,14 +150,25 @@ async function findIdentityFiles(uri, lookup) {
  * @param {vscode.Uri} uri
  * @param {Map<string, AgeKeyLookup>} groups
  */
-async function selectIdentityFile(uri, groups) {
+async function selectIdentitySource(uri, groups) {
+    const items = [...groups.keys()].map(label => ({ label }));
     for (;;) {
-        const group = await vscode.window.showQuickPick([...groups.keys()], {
-            placeHolder: 'Select an age identity group or press Esc to paste a key',
-            ignoreFocusOut: true,
-        });
-        if (group === undefined) return;
+        const choice = await pickOrEnterCredential(items,
+            { placeHolder: 'Select an age identity group', ignoreFocusOut: true },
+            {
+                title: 'SOPS needs a matching age identity',
+                prompt: 'Paste your private age identity.',
+                placeHolder: 'AGE-SECRET-KEY-1…',
+                ignoreFocusOut: true,
+                validateInput: value => ageSecretPattern.test(value.trim())
+                    ? undefined
+                    : 'Enter a private age identity beginning with AGE-SECRET-KEY-1.',
+            }
+        );
+        if (!choice) return;
+        if ('value' in choice) return { key: choice.value.trim() };
 
+        const group = choice.item.label;
         const lookup = groups.get(group);
         const files = await findIdentityFiles(uri, lookup);
         if (!files.length) {
@@ -198,6 +195,7 @@ async function selectIdentityFile(uri, groups) {
 async function selectDecryptedAgeIdentity(text) {
     const keys = [...new Set(text.split(/\r?\n/).map(line => line.trim()).filter(line => ageSecretPattern.test(line)))];
     if (!keys.length) throw new Error('The decrypted GPG file contains no private age identities.');
+    if (keys.length === 1) return { key: keys[0] };
 
     const items = keys.map((key, index) => ({
         label: `Age identity ${index + 1}`,
@@ -213,8 +211,8 @@ async function selectDecryptedAgeIdentity(text) {
  */
 async function selectSopsAgeIdentity(uri, decryptIdentityFile) {
     const groups = getIdentityLookupGroups();
-    const selected = groups.size ? await selectIdentityFile(uri, groups) : undefined;
-    if (!selected) return promptForAgeIdentity();
+    const selected = await selectIdentitySource(uri, groups);
+    if (!selected || 'key' in selected) return selected;
     if (!selected.encrypted) return { file: selected.file };
 
     const decrypted = await decryptIdentityFile(selected.file);

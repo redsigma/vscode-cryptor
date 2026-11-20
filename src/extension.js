@@ -5,6 +5,7 @@ const gpg = require('./gpg.js');
 const sops = require('./sops.js');
 const { resolveToolEnvironment, mergeToolEnvironment } = require('./toolEnvironment.js');
 const { selectSopsAgeIdentity } = require('./sopsIdentity.js');
+const { pickOrEnterCredential } = require('./credentialPrompt.js');
 const { gpgArgumentHovers } = require('./gpgArguments.js');
 const { registerSettingHovers } = require('./settingHovers.js');
 // fs module for interacting with the file system
@@ -260,40 +261,27 @@ async function checkFile(inputFilePath, destFilePath) {
 }
 
 /**
- * Try to get a passphrase from the customer
+ * Pick a stored passphrase or ask for one in a masked input.
  *
- * @returns {Promise<string>}
+ * @returns {Promise<string | undefined>}
  */
-function getPassphrase() {
-    return new Promise(function (resolve, reject) {
-        // Getting passphrases from configuration as an object "email" =>""passphrase"
-        /**
-         * @type {{email: string, description: string, passphrase: string}[]} passphrases
-        */
-        let passphrases = getGpgSetting('passphrases');
-
-        let options = passphrases.map(currentValue => ({
-            label: `<${currentValue.email}>`,
-            description: currentValue.description ? `(${currentValue.description})` : '',
-            passphrase: currentValue.passphrase,
-        }));
-
-        if (options && options.length) {
-            vscode.window.showQuickPick(options, { placeHolder: "Select stored passphrase" }).then(selected => {
-                selected ? resolve(selected.passphrase) : reject("no stored passphrase was selected")
-            });
-        } else {
-            reject("there are no stored passphrases");
-        }
-    }).catch(() => {
-        // Default behaviour ask for the passphrase
-        return vscode.window.showInputBox({
+async function getPassphrase() {
+    const configured = getGpgSetting('passphrases');
+    const passphrases = Array.isArray(configured) ? configured : [];
+    const items = passphrases.filter(entry => entry && typeof entry.passphrase === 'string').map(entry => ({
+        label: `<${entry.email}>`,
+        description: entry.description ? `(${entry.description})` : '',
+        passphrase: entry.passphrase,
+    }));
+    const choice = await pickOrEnterCredential(items,
+        { placeHolder: 'Select stored passphrase' },
+        {
             prompt: 'Provide your passphrase',
             placeHolder: 'My passphrase',
-            password: true,
-            validateInput: value => (value.length == 0) ? "Passphrase cannot be empty" : null
-        });
-    });
+            validateInput: value => value.length === 0 ? 'Passphrase cannot be empty' : undefined,
+        }
+    );
+    if (choice) return 'item' in choice ? choice.item.passphrase : choice.value;
 }
 
 /**
